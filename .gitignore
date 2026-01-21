@@ -1,0 +1,35 @@
+# Binary
+cctx
+cctx-*
+
+# Build artifacts
+*.bak
+*.bak[0-9]
+fix_files.py
+
+# Runtime data (now in ~/.cctx, not in repo)
+config.json
+config.json.backup
+contexts/
+scripts/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*~
+
+# Symlinks (shouldn't be in repo root)
+*.md
+!README.md
+!CLAUDE.md
