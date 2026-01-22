@@ -184,3 +184,33 @@ func Confirm(prompt string, defaultYes bool) bool {
 
 	return response == "y" || response == "yes"
 }
+
+// GetGitBranch returns the current git branch name, or empty string if not in a git repo
+func GetGitBranch() string {
+	cmd := exec.Command("git", "branch", "--show-current")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// GetGitCommit returns the latest git commit hash, or empty string if not in a git repo
+func GetGitCommit() string {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// GetGitCommitShort returns the short version of the latest git commit hash
+func GetGitCommitShort() string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}

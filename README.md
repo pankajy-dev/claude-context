@@ -96,16 +96,21 @@ cctx verify --fix  # Auto-repair broken links
 # Create a ticket workspace
 cctx ticket create JIRA-123 --title "Add user authentication" --tags "backend,auth"
 
-# Link ticket to projects (creates ticket-JIRA-123.md symlinks)
-cctx ticket link JIRA-123 project1 project2
+# Link ticket to projects (using flags or env vars)
+cctx -t JIRA-123 ticket link project1 project2
+export CCTX_TICKET=JIRA-123 && cctx ticket link
 
 # List tickets
 cctx ticket list
-cctx ticket show JIRA-123
+cctx -t JIRA-123 ticket show
 
-# Complete and archive
-cctx ticket complete JIRA-123 --commits "abc123,def456"
-cctx ticket archive JIRA-123
+# Complete ticket (auto-archives and removes from all projects)
+cctx -t JIRA-123 ticket complete                    # Auto-detects branch + commit
+cctx -t JIRA-123 ticket complete --commits "abc123" --prs "42"  # Manual override
+
+# Bulk operations
+cctx ticket archive-all           # Archive all active tickets
+cctx -p project1 project reset    # Remove all tickets from one project
 ```
 
 ### Global Contexts
