@@ -109,8 +109,8 @@ cctx -t JIRA-123 ticket complete                    # Auto-detects branch + comm
 cctx -t JIRA-123 ticket complete --commits "abc123" --prs "42"  # Manual override
 
 # Bulk operations
-cctx ticket archive-all           # Archive all active tickets
-cctx -p project1 project reset    # Remove all tickets from one project
+cctx ticket archive-all           # Archive all active tickets (all projects)
+cctx -p project1 ticket archive-all  # Archive all tickets from specific project
 ```
 
 ### Global Contexts

@@ -1242,7 +1242,7 @@ Specify the ticket using:
 var ticketArchiveAllCmd = &cobra.Command{
 	Use:   "archive-all",
 	Short: "Archive all active tickets",
-	Long: `Archive all active tickets across all projects.
+	Long: `Archive all active tickets across all projects, or from a specific project.
 
 This command will:
   - Mark all active tickets as completed (if not already)
@@ -1251,7 +1251,12 @@ This command will:
   - Update all .clauderc files
   - Update config.json to move tickets from active to archived
 
-This is useful for bulk cleanup or when starting a new sprint/phase.`,
+This is useful for bulk cleanup or when starting a new sprint/phase.
+
+Specify a project to archive only tickets linked to that project:
+  - Flag: cctx -p api-gateway ticket archive-all
+  - Env var: export CCTX_PROJECT=api-gateway && cctx ticket archive-all
+  - Current directory: cd /path/to/project && cctx ticket archive-all`,
 	Args: cobra.NoArgs,
 	RunE: runTicketArchiveAll,
 }
@@ -1468,17 +1473,57 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Check if there are any active tickets
-	if len(cfg.Tickets.Active) == 0 {
-		infoMsg("No active tickets to archive")
+	// Check if we should filter by project
+	var projectFilter string
+	if projectFlag != "" || os.Getenv("CCTX_PROJECT") != "" {
+		projectFilter, err = GetProjectContext(dataDir)
+		if err != nil {
+			return err
+		}
+
+		// Verify project exists
+		if cfg.GetProject(projectFilter) == nil {
+			return fmt.Errorf("project not found: %s", projectFilter)
+		}
+	}
+
+	// Filter tickets by project if specified
+	ticketsToArchive := []config.Ticket{}
+	if projectFilter != "" {
+		// Only archive tickets linked to this project
+		for _, ticket := range cfg.Tickets.Active {
+			for _, lp := range ticket.LinkedProjects {
+				if lp.ContextName == projectFilter {
+					ticketsToArchive = append(ticketsToArchive, ticket)
+					break
+				}
+			}
+		}
+	} else {
+		// Archive all active tickets
+		ticketsToArchive = cfg.Tickets.Active
+	}
+
+	// Check if there are any tickets to archive
+	if len(ticketsToArchive) == 0 {
+		if projectFilter != "" {
+			infoMsg(fmt.Sprintf("No active tickets to archive for project: %s", projectFilter))
+		} else {
+			infoMsg("No active tickets to archive")
+		}
 		return nil
 	}
 
 	// Show what will be archived
 	fmt.Println()
-	infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(cfg.Tickets.Active)))
+	if projectFilter != "" {
+		infoMsg(fmt.Sprintf("Project: %s", projectFilter))
+		infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(ticketsToArchive)))
+	} else {
+		infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(ticketsToArchive)))
+	}
 	fmt.Println()
-	for _, ticket := range cfg.Tickets.Active {
+	for _, ticket := range ticketsToArchive {
 		fmt.Printf("  • %s", ticket.TicketID)
 		if ticket.Title != "" {
 			fmt.Printf(" - %s", ticket.Title)
@@ -1494,7 +1539,11 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 
 	// Confirmation required (unless --force or --dry-run)
 	if !ticketForce && !dryRun {
-		if !common.Confirm("Archive all active tickets?", false) {
+		confirmMsg := "Archive all active tickets?"
+		if projectFilter != "" {
+			confirmMsg = fmt.Sprintf("Archive all active tickets for project '%s'?", projectFilter)
+		}
+		if !common.Confirm(confirmMsg, false) {
 			infoMsg("Operation cancelled")
 			return nil
 		}
@@ -1502,7 +1551,7 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	}
 
 	archivedCount := 0
-	for _, ticket := range cfg.Tickets.Active {
+	for _, ticket := range ticketsToArchive {
 		ticketID := ticket.TicketID
 
 		if verbose {
@@ -1568,17 +1617,30 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	}
 
 	if !dryRun {
-		// Move all active tickets to archived in config
+		// Create a map of archived ticket IDs for quick lookup
+		archivedTicketIDs := make(map[string]bool)
+		for _, ticket := range ticketsToArchive {
+			archivedTicketIDs[ticket.TicketID] = true
+		}
+
+		// Move archived tickets from active to archived in config
+		newActive := []config.Ticket{}
 		for i := range cfg.Tickets.Active {
 			ticket := &cfg.Tickets.Active[i]
-			if ticket.Status != "completed" && ticket.Status != "abandoned" {
-				ticket.Status = "completed"
+			if archivedTicketIDs[ticket.TicketID] {
+				// This ticket should be archived
+				if ticket.Status != "completed" && ticket.Status != "abandoned" {
+					ticket.Status = "completed"
+				}
+				ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s",
+					time.Now().Format("2006-01-02"), ticket.TicketID)
+				cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
+			} else {
+				// Keep this ticket active
+				newActive = append(newActive, *ticket)
 			}
-			ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s",
-				time.Now().Format("2006-01-02"), ticket.TicketID)
-			cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
 		}
-		cfg.Tickets.Active = []config.Ticket{}
+		cfg.Tickets.Active = newActive
 
 		if err := cfgMgr.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)

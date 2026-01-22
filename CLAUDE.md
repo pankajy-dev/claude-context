@@ -125,13 +125,10 @@ cctx ticket delete --force
 
 # Bulk Operations
 # Archive all active tickets at once (useful for sprint cleanup)
-cctx ticket archive-all                 # Archives all active tickets
+cctx ticket archive-all                 # Archives all active tickets (all projects)
 cctx ticket archive-all --force         # Skip confirmation
-
-# Remove all tickets from a specific project (tickets remain active)
-cctx -p project1 project reset          # Uses -p flag
-cd /path/to/project && cctx project reset  # Uses current directory
-export CCTX_PROJECT=project1 && cctx project reset  # Uses env var
+cctx -p project1 ticket archive-all     # Archive all tickets from specific project
+export CCTX_PROJECT=project1 && cctx ticket archive-all  # Using env var
 ```
 
 **Ticket Flag Usage:**
@@ -146,7 +143,7 @@ export CCTX_PROJECT=project1 && cctx project reset  # Uses env var
 
 **Bulk Operations:**
 - `ticket archive-all`: Archives all active tickets across all projects (useful for sprint cleanup)
-- `project reset`: Removes all ticket symlinks from one project (tickets remain active in ~/.cctx)
+- `ticket archive-all -p <project>`: Archives all active tickets from a specific project only
 
 ### Managing Global Contexts
 
