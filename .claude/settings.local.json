@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./cctx ticket complete:*)",
+      "Bash(./cctx ticket:*)",
+      "Bash(make install:*)",
+      "Bash(cctx ticket complete --help:*)",
+      "Bash(cctx ticket link --help:*)",
+      "Bash(make build:*)",
+      "Bash(./cctx project reset:*)",
+      "Bash(./cctx:*)",
+      "Bash(cctx project --help:*)"
+    ]
+  }
+}

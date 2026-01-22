@@ -160,13 +160,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		successMsg("Updated configuration")
 	}
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Sync project: %s", contextName)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else if !dryRun {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
 		fmt.Println()

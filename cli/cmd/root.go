@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 
 	"github.com/pankaj/claude-context/internal/common"
+	"github.com/pankaj/claude-context/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var (
 	// Global flags
-	dryRun  bool
-	verbose bool
-	dataDir string
+	dryRun      bool
+	verbose     bool
+	dataDir     string
+	projectFlag string
+	ticketFlag  string
 )
 
 var rootCmd = &cobra.Command{
@@ -39,6 +42,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without executing")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed information")
 	rootCmd.PersistentFlags().StringVarP(&dataDir, "data-dir", "d", "", "Path to data directory (default: ~/.cctx, or CCTX_DATA_DIR env var)")
+	rootCmd.PersistentFlags().StringVarP(&projectFlag, "project", "p", "", "Project context name (default: CCTX_PROJECT env var or current directory)")
+	rootCmd.PersistentFlags().StringVarP(&ticketFlag, "ticket", "t", "", "Ticket ID (default: CCTX_TICKET env var)")
 }
 
 // Helper functions for consistent output
@@ -112,4 +117,86 @@ func GetDataDirOrExit() string {
 	}
 
 	return dataDir
+}
+
+// GetProjectContext resolves the project context from various sources
+// Priority: 1) --project flag, 2) CCTX_PROJECT env var, 3) current directory
+// Returns the project context name or empty string if not found
+func GetProjectContext(dataDir string) (string, error) {
+	// 1. Check --project flag
+	if projectFlag != "" {
+		return projectFlag, nil
+	}
+
+	// 2. Check CCTX_PROJECT environment variable
+	if envProject := os.Getenv("CCTX_PROJECT"); envProject != "" {
+		return envProject, nil
+	}
+
+	// 3. Try to detect from current directory
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Load config to check if current directory is a managed project
+	cfgMgr := config.NewManager(dataDir)
+	cfg, err := cfgMgr.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check if current directory matches any managed project
+	for _, project := range cfg.ManagedProjects {
+		if project.ProjectPath == currentDir {
+			return project.ContextName, nil
+		}
+	}
+
+	return "", nil
+}
+
+// GetProjectContextOrExit resolves the project context or exits with an error
+func GetProjectContextOrExit(dataDir string) string {
+	projectName, err := GetProjectContext(dataDir)
+	if err != nil {
+		errorMsg(fmt.Sprintf("Failed to resolve project context: %v", err))
+		os.Exit(1)
+	}
+
+	if projectName == "" {
+		errorMsg("No project context found")
+		errorMsg("Use --project/-p flag, set CCTX_PROJECT env var, or run from a managed project directory")
+		os.Exit(1)
+	}
+
+	return projectName
+}
+
+// GetTicketID resolves the ticket ID from flag or environment variable
+// Priority: 1) --ticket flag, 2) CCTX_TICKET env var
+// Returns the ticket ID or empty string if not found
+func GetTicketID() string {
+	// 1. Check --ticket flag
+	if ticketFlag != "" {
+		return ticketFlag
+	}
+
+	// 2. Check CCTX_TICKET environment variable
+	if envTicket := os.Getenv("CCTX_TICKET"); envTicket != "" {
+		return envTicket
+	}
+
+	return ""
+}
+
+// GetTicketIDOrExit resolves the ticket ID or exits with an error
+func GetTicketIDOrExit() string {
+	ticketID := GetTicketID()
+	if ticketID == "" {
+		errorMsg("No ticket ID provided")
+		errorMsg("Use --ticket/-t flag or set CCTX_TICKET env var")
+		os.Exit(1)
+	}
+	return ticketID
 }

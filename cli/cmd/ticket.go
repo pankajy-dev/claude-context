@@ -88,6 +88,10 @@ func init() {
 	// ticket delete
 	ticketCmd.AddCommand(ticketDeleteCmd)
 	ticketDeleteCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
+
+	// ticket archive-all
+	ticketCmd.AddCommand(ticketArchiveAllCmd)
+	ticketArchiveAllCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
 }
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
@@ -311,21 +315,44 @@ Brief description here.
 
 // ticket link subcommand
 var ticketLinkCmd = &cobra.Command{
-	Use:   "link <ticket-id> <context-name> [<context-name>...]",
+	Use:   "link [<project>...]",
 	Short: "Link ticket to one or more projects",
 	Long: `Link a ticket to one or more projects.
 
-Creates symlinks in project directories and updates .clauderc automatically.`,
-	Args: cobra.MinimumNArgs(2),
+Creates symlinks in project directories and updates .clauderc automatically.
+
+Specify ticket and projects using:
+  - Ticket flag + project args: cctx -t TICKET-123 ticket link api-gateway frontend
+  - Ticket flag + project flag: cctx -t TICKET-123 -p api-gateway ticket link
+  - Both env vars: export CCTX_TICKET=TICKET-123 CCTX_PROJECT=api-gateway && cctx ticket link`,
+	Args: cobra.ArbitraryArgs,
 	RunE: runTicketLink,
 }
 
 func runTicketLink(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
-	projectNames := args[1:]
-
 	// Get data directory
 	dataDir := GetDataDirOrExit()
+
+	// Get ticket ID from flag or env var
+	ticketID := GetTicketIDOrExit()
+
+	// Determine project names - args are now always project names
+	projectNames := []string{}
+
+	if len(args) > 0 {
+		// Projects specified as arguments
+		projectNames = args
+	} else {
+		// Try to get from --project flag or env var
+		projectName, err := GetProjectContext(dataDir)
+		if err != nil {
+			return err
+		}
+		if projectName == "" {
+			return fmt.Errorf("no projects specified. Use --project/-p flag, set CCTX_PROJECT, or provide project names as arguments")
+		}
+		projectNames = []string{projectName}
+	}
 
 	// Load config
 	cfgMgr := config.NewManager(dataDir)
@@ -418,15 +445,7 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 		successMsg("Updated configuration")
 	}
 
-	// Git commit
-	if successCount > 0 {
-		commitMsg := fmt.Sprintf("Link ticket %s to projects", ticketID)
-		if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-			warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-		} else if !dryRun {
-			successMsg("Committed changes to git")
-		}
-	}
+	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
 		fmt.Println()
@@ -438,28 +457,27 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 
 // ticket unlink subcommand
 var ticketUnlinkCmd = &cobra.Command{
-	Use:   "unlink <ticket-id> [<context-name>...]",
+	Use:   "unlink [<project>...]",
 	Short: "Unlink ticket from project(s)",
 	Long: `Unlink a ticket from one or more projects.
 
 Removes symlinks and updates .clauderc automatically.
-Use --all to unlink from all projects.`,
-	Args: cobra.MinimumNArgs(1),
+
+Specify ticket and projects using:
+  - Ticket flag + project args: cctx -t TICKET-123 ticket unlink api-gateway frontend
+  - Ticket flag + project flag: cctx -t TICKET-123 -p api-gateway ticket unlink
+  - Both env vars: export CCTX_TICKET=TICKET-123 CCTX_PROJECT=api-gateway && cctx ticket unlink
+  - Use --all to unlink from all projects: cctx -t TICKET-123 ticket unlink --all`,
+	Args: cobra.ArbitraryArgs,
 	RunE: runTicketUnlink,
 }
 
 func runTicketUnlink(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
-	projectNames := []string{}
-	if !ticketAll {
-		if len(args) < 2 {
-			return fmt.Errorf("specify project names or use --all")
-		}
-		projectNames = args[1:]
-	}
-
 	// Get data directory
 	dataDir := GetDataDirOrExit()
+
+	// Get ticket ID from flag or env var
+	ticketID := GetTicketIDOrExit()
 
 	// Load config
 	cfgMgr := config.NewManager(dataDir)
@@ -474,11 +492,27 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ticket not found: %s", ticketID)
 	}
 
-	// If --all, get all linked projects
+	// Determine project names - args are now always project names
+	projectNames := []string{}
+
 	if ticketAll {
+		// --all flag: unlink from all linked projects
 		for _, lp := range ticket.LinkedProjects {
 			projectNames = append(projectNames, lp.ContextName)
 		}
+	} else if len(args) > 0 {
+		// Projects specified as arguments
+		projectNames = args
+	} else {
+		// Try to get from --project flag or env var
+		projectName, err := GetProjectContext(dataDir)
+		if err != nil {
+			return err
+		}
+		if projectName == "" {
+			return fmt.Errorf("no projects specified. Use --project/-p flag, set CCTX_PROJECT, provide project names as arguments, or use --all")
+		}
+		projectNames = []string{projectName}
 	}
 
 	if len(projectNames) == 0 {
@@ -546,15 +580,7 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 		successMsg("Updated configuration")
 	}
 
-	// Git commit
-	if successCount > 0 {
-		commitMsg := fmt.Sprintf("Unlink ticket %s from projects", ticketID)
-		if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-			warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-		} else if !dryRun {
-			successMsg("Committed changes to git")
-		}
-	}
+	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
 		fmt.Println()
@@ -581,6 +607,20 @@ func runTicketList(cmd *cobra.Command, args []string) error {
 	cfg, err := cfgMgr.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check if we should filter by project
+	var projectFilter string
+	if projectFlag != "" || os.Getenv("CCTX_PROJECT") != "" {
+		projectFilter, err = GetProjectContext(dataDir)
+		if err != nil {
+			return err
+		}
+
+		// Verify project exists
+		if cfg.GetProject(projectFilter) == nil {
+			return fmt.Errorf("project not found: %s", projectFilter)
+		}
 	}
 
 	var tickets []config.Ticket
@@ -620,9 +660,34 @@ func runTicketList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid status filter: %s", ticketStatus)
 	}
 
+	// Filter by project if specified
+	if projectFilter != "" {
+		filteredTickets := []config.Ticket{}
+		for _, ticket := range tickets {
+			for _, lp := range ticket.LinkedProjects {
+				if lp.ContextName == projectFilter {
+					filteredTickets = append(filteredTickets, ticket)
+					break
+				}
+			}
+		}
+		tickets = filteredTickets
+	}
+
 	if len(tickets) == 0 {
-		infoMsg(fmt.Sprintf("No tickets found (status: %s)", ticketStatus))
+		if projectFilter != "" {
+			infoMsg(fmt.Sprintf("No tickets found for project '%s' (status: %s)", projectFilter, ticketStatus))
+		} else {
+			infoMsg(fmt.Sprintf("No tickets found (status: %s)", ticketStatus))
+		}
 		return nil
+	}
+
+	// Show filter info
+	if projectFilter != "" {
+		fmt.Println()
+		infoMsg(fmt.Sprintf("Showing tickets for project: %s", projectFilter))
+		fmt.Println()
 	}
 
 	// Print table
@@ -668,15 +733,19 @@ func runTicketList(cmd *cobra.Command, args []string) error {
 
 // ticket show subcommand
 var ticketShowCmd = &cobra.Command{
-	Use:   "show <ticket-id>",
+	Use:   "show",
 	Short: "Show detailed ticket information",
-	Long:  `Show detailed information about a specific ticket.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTicketShow,
+	Long: `Show detailed information about a specific ticket.
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket show
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket show`,
+	Args: cobra.NoArgs,
+	RunE: runTicketShow,
 }
 
 func runTicketShow(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -755,15 +824,38 @@ func runTicketShow(cmd *cobra.Command, args []string) error {
 
 // ticket complete subcommand
 var ticketCompleteCmd = &cobra.Command{
-	Use:   "complete <ticket-id>",
-	Short: "Mark ticket as completed",
-	Long:  `Mark a ticket as completed with optional commit hashes and PR numbers.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTicketComplete,
+	Use:   "complete",
+	Short: "Mark ticket as completed and auto-archive",
+	Long: `Mark a ticket as completed and automatically archive it.
+
+This command will:
+  - Mark ticket as completed
+  - Auto-detect current git branch and commit (if in a git repo)
+  - Remove ticket symlinks from all linked projects
+  - Archive the ticket to ~/.cctx/contexts/_archived/
+  - Update all .clauderc files
+
+Git info is auto-detected from your current directory:
+  - Branch name: stored in ticket notes
+  - Latest commit: stored in ticket commits
+  - Override with --commits flag if needed
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket complete
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket complete
+
+Examples:
+  # Auto-detect everything
+  cd /path/to/project && cctx -t TICKET-123 ticket complete
+
+  # Manual override
+  cctx -t TICKET-123 ticket complete --commits "abc123,def456" --prs "42,43"`,
+	Args: cobra.NoArgs,
+	RunE: runTicketComplete,
 }
 
 func runTicketComplete(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -791,13 +883,33 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	ticket.CompletedAt = &completedAt
 	ticket.LastModified = time.Now()
 
-	// Parse commits
-	if ticketCommits != "" {
+	// Auto-detect git info if not provided
+	if ticketCommits == "" {
+		// Try to get commit from current directory
+		commit := common.GetGitCommitShort()
+		if commit != "" {
+			ticket.Commits = []string{commit}
+			infoMsg(fmt.Sprintf("Auto-detected commit: %s", commit))
+		}
+	} else {
+		// Parse provided commits
 		commits := []string{}
 		for _, c := range splitAndTrim(ticketCommits, ",") {
 			commits = append(commits, c)
 		}
 		ticket.Commits = commits
+	}
+
+	// Auto-detect branch name
+	branch := common.GetGitBranch()
+	if branch != "" {
+		infoMsg(fmt.Sprintf("Auto-detected branch: %s", branch))
+		// Store branch in notes if not already present
+		if ticket.Notes == "" {
+			ticket.Notes = fmt.Sprintf("Branch: %s", branch)
+		} else if !strings.Contains(ticket.Notes, branch) {
+			ticket.Notes = fmt.Sprintf("%s\nBranch: %s", ticket.Notes, branch)
+		}
 	}
 
 	// Parse PRs
@@ -811,41 +923,106 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would mark ticket %s as completed", ticketID))
+		dryRunMsg("Would auto-archive and remove symlinks")
 		return nil
 	}
 
-	// Save config
+	// Save config first (before archiving)
+	if err := cfgMgr.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Println()
+	successMsg(fmt.Sprintf("Ticket %s marked as completed", ticketID))
+
+	// Auto-archive: Remove symlinks from all linked projects
+	fmt.Println()
+	infoMsg("Auto-archiving ticket (removing from projects)...")
+
+	for _, lp := range ticket.LinkedProjects {
+		project := cfg.GetProject(lp.ContextName)
+		if project == nil {
+			continue
+		}
+
+		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+
+		if common.FileExists(symlinkPath) {
+			if err := common.RemoveSymlink(symlinkPath); err != nil {
+				warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
+			} else {
+				successMsg(fmt.Sprintf("Removed symlink from %s", lp.ContextName))
+			}
+		}
+
+		// Update .clauderc
+		rcMgr := clauderc.NewManager(project.ProjectPath)
+		if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
+			warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
+		}
+	}
+
+	// Move ticket to archived
+	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+	archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+
+	if err := common.EnsureDir(filepath.Dir(archivedDir)); err != nil {
+		return fmt.Errorf("failed to create archived directory: %w", err)
+	}
+
+	if err := os.Rename(ticketDir, archivedDir); err != nil {
+		return fmt.Errorf("failed to move ticket to archived: %w", err)
+	}
+	successMsg("Moved ticket to archived")
+
+	// Update config: move from active to archived
+	ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s", time.Now().Format("2006-01-02"), ticketID)
+
+	// Remove from active tickets
+	newActive := []config.Ticket{}
+	for _, t := range cfg.Tickets.Active {
+		if t.TicketID != ticketID {
+			newActive = append(newActive, t)
+		}
+	}
+	cfg.Tickets.Active = newActive
+
+	// Add to archived tickets
+	cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
+
 	if err := cfgMgr.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 	successMsg("Updated configuration")
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Complete ticket: %s", ticketID)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else {
-		successMsg("Committed changes to git")
-	}
-
 	fmt.Println()
-	successMsg(fmt.Sprintf("Ticket %s marked as completed", ticketID))
-	infoMsg("Next step: archive the ticket with: cctx ticket archive " + ticketID)
+	successMsg(fmt.Sprintf("Successfully completed and archived: %s", ticketID))
+	infoMsg(fmt.Sprintf("Archived location: %s", archivedDir))
+	if len(ticket.Commits) > 0 {
+		infoMsg(fmt.Sprintf("Commits: %s", strings.Join(ticket.Commits, ", ")))
+	}
+	if branch != "" {
+		infoMsg(fmt.Sprintf("Branch: %s", branch))
+	}
 
 	return nil
 }
 
 // ticket abandon subcommand
 var ticketAbandonCmd = &cobra.Command{
-	Use:   "abandon <ticket-id>",
+	Use:   "abandon",
 	Short: "Mark ticket as abandoned",
-	Long:  `Mark a ticket as abandoned with optional reason.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTicketAbandon,
+	Long: `Mark a ticket as abandoned with optional reason.
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket abandon
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket abandon`,
+	Args: cobra.NoArgs,
+	RunE: runTicketAbandon,
 }
 
 func runTicketAbandon(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -888,13 +1065,7 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 	}
 	successMsg("Updated configuration")
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Abandon ticket: %s", ticketID)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	fmt.Println()
 	successMsg(fmt.Sprintf("Ticket %s marked as abandoned", ticketID))
@@ -905,18 +1076,22 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 
 // ticket archive subcommand
 var ticketArchiveCmd = &cobra.Command{
-	Use:   "archive <ticket-id>",
+	Use:   "archive",
 	Short: "Archive completed/abandoned ticket",
 	Long: `Archive a completed or abandoned ticket.
 
 Moves ticket to archived directory, removes symlinks from all projects,
-and generates documentation for completed tickets.`,
-	Args: cobra.ExactArgs(1),
+and generates documentation for completed tickets.
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket archive
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket archive`,
+	Args: cobra.NoArgs,
 	RunE: runTicketArchive,
 }
 
 func runTicketArchive(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1032,16 +1207,20 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 
 // ticket edit subcommand
 var ticketEditCmd = &cobra.Command{
-	Use:   "edit <ticket-id>",
+	Use:   "edit",
 	Short: "Edit ticket metadata",
-	Long:  `Edit ticket metadata (title, tags, notes).`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTicketEdit,
+	Long: `Edit ticket metadata (title, tags, notes).
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket edit --title "New title"
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket edit --title "New title"`,
+	Args: cobra.NoArgs,
+	RunE: runTicketEdit,
 }
 
 // ticket delete subcommand
 var ticketDeleteCmd = &cobra.Command{
-	Use:   "delete <ticket-id>",
+	Use:   "delete",
 	Short: "Permanently delete a ticket",
 	Long: `Permanently delete a ticket and all associated files.
 
@@ -1051,13 +1230,34 @@ This removes:
 - Symlinks from all linked projects
 - .clauderc entries in projects
 
-This action cannot be undone.`,
-	Args: cobra.ExactArgs(1),
+This action cannot be undone.
+
+Specify the ticket using:
+  - Flag: cctx -t TICKET-123 ticket delete
+  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket delete`,
+	Args: cobra.NoArgs,
 	RunE: runTicketDelete,
 }
 
+var ticketArchiveAllCmd = &cobra.Command{
+	Use:   "archive-all",
+	Short: "Archive all active tickets",
+	Long: `Archive all active tickets across all projects.
+
+This command will:
+  - Mark all active tickets as completed (if not already)
+  - Remove all ticket symlinks from all linked projects
+  - Move all tickets to ~/.cctx/contexts/_archived/
+  - Update all .clauderc files
+  - Update config.json to move tickets from active to archived
+
+This is useful for bulk cleanup or when starting a new sprint/phase.`,
+	Args: cobra.NoArgs,
+	RunE: runTicketArchiveAll,
+}
+
 func runTicketEdit(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Check if any flags were provided
 	if ticketTitle == "" && ticketTags == "" && ticketNotes == "" {
@@ -1103,13 +1303,7 @@ func runTicketEdit(cmd *cobra.Command, args []string) error {
 	}
 	successMsg("Updated configuration")
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Edit ticket: %s", ticketID)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	fmt.Println()
 	successMsg(fmt.Sprintf("Successfully updated ticket: %s", ticketID))
@@ -1130,7 +1324,7 @@ func splitAndTrim(s string, sep string) []string {
 }
 
 func runTicketDelete(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	ticketID := GetTicketIDOrExit()
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1258,6 +1452,144 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 	if !dryRun {
 		fmt.Println()
 		successMsg(fmt.Sprintf("Successfully deleted ticket: %s", ticketID))
+	}
+
+	return nil
+}
+
+func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
+	// Get data directory
+	dataDir := GetDataDirOrExit()
+
+	// Load config
+	cfgMgr := config.NewManager(dataDir)
+	cfg, err := cfgMgr.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check if there are any active tickets
+	if len(cfg.Tickets.Active) == 0 {
+		infoMsg("No active tickets to archive")
+		return nil
+	}
+
+	// Show what will be archived
+	fmt.Println()
+	infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(cfg.Tickets.Active)))
+	fmt.Println()
+	for _, ticket := range cfg.Tickets.Active {
+		fmt.Printf("  • %s", ticket.TicketID)
+		if ticket.Title != "" {
+			fmt.Printf(" - %s", ticket.Title)
+		}
+		fmt.Printf(" (%d project(s))\n", len(ticket.LinkedProjects))
+	}
+	fmt.Println()
+	infoMsg("This will:")
+	infoMsg("  - Remove all ticket symlinks from all projects")
+	infoMsg("  - Update all .clauderc files")
+	infoMsg("  - Move tickets to ~/.cctx/contexts/_archived/")
+	fmt.Println()
+
+	// Confirmation required (unless --force or --dry-run)
+	if !ticketForce && !dryRun {
+		if !common.Confirm("Archive all active tickets?", false) {
+			infoMsg("Operation cancelled")
+			return nil
+		}
+		fmt.Println()
+	}
+
+	archivedCount := 0
+	for _, ticket := range cfg.Tickets.Active {
+		ticketID := ticket.TicketID
+
+		if verbose {
+			infoMsg(fmt.Sprintf("Archiving ticket: %s", ticketID))
+		}
+
+		// Remove symlinks from all linked projects
+		for _, lp := range ticket.LinkedProjects {
+			project := cfg.GetProject(lp.ContextName)
+			if project == nil {
+				if verbose {
+					warningMsg(fmt.Sprintf("Project not found: %s", lp.ContextName))
+				}
+				continue
+			}
+
+			symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+
+			if dryRun {
+				dryRunMsg(fmt.Sprintf("Would remove symlink from %s: %s", lp.ContextName, ticketID))
+			} else {
+				if common.FileExists(symlinkPath) {
+					if err := common.RemoveSymlink(symlinkPath); err != nil {
+						warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
+					} else if verbose {
+						successMsg(fmt.Sprintf("Removed %s symlink from %s", ticketID, lp.ContextName))
+					}
+				}
+
+				// Update .clauderc
+				rcMgr := clauderc.NewManager(project.ProjectPath)
+				if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
+					warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
+				}
+			}
+		}
+
+		// Move ticket directory to archived
+		ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+		archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived",
+			fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+
+		if dryRun {
+			dryRunMsg(fmt.Sprintf("Would move %s to archived", ticketID))
+		} else {
+			if common.DirExists(ticketDir) {
+				// Ensure archived directory exists
+				if err := common.EnsureDir(filepath.Join(cfgMgr.GetContextsPath(), "_archived")); err != nil {
+					return fmt.Errorf("failed to create archived directory: %w", err)
+				}
+
+				if err := os.Rename(ticketDir, archivedDir); err != nil {
+					warningMsg(fmt.Sprintf("Failed to move %s to archived: %v", ticketID, err))
+					continue
+				}
+			}
+		}
+
+		archivedCount++
+		if !verbose {
+			successMsg(fmt.Sprintf("Archived: %s", ticketID))
+		}
+	}
+
+	if !dryRun {
+		// Move all active tickets to archived in config
+		for i := range cfg.Tickets.Active {
+			ticket := &cfg.Tickets.Active[i]
+			if ticket.Status != "completed" && ticket.Status != "abandoned" {
+				ticket.Status = "completed"
+			}
+			ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s",
+				time.Now().Format("2006-01-02"), ticket.TicketID)
+			cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
+		}
+		cfg.Tickets.Active = []config.Ticket{}
+
+		if err := cfgMgr.Save(cfg); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	// Git commit removed (no longer tracking in git)
+
+	if !dryRun {
+		fmt.Println()
+		successMsg(fmt.Sprintf("Successfully archived %d ticket(s)", archivedCount))
 	}
 
 	return nil

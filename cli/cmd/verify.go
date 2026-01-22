@@ -380,15 +380,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Git commit if any fixes were made
-		if fixed > 0 && !dryRun {
-			commitMsg := fmt.Sprintf("Verify: Fixed %d issues", fixed)
-			if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-			} else {
-				successMsg("Committed fixes to git")
-			}
-		}
+		// Git commit removed (no longer tracking in git)
 
 		fmt.Println()
 		if !dryRun {

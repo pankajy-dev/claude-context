@@ -77,25 +77,34 @@ Requires confirmation before proceeding.`,
 
 // global link subcommand
 var globalLinkCmd = &cobra.Command{
-	Use:   "link <name> <project1> [project2...]",
+	Use:   "link <name> [<project1> <project2>...]",
 	Short: "Link a global context to specific projects",
 	Long: `Link a global context to one or more projects.
 
 Creates symlinks in the project directories and tracks the linkage in config.json.
 
-Use --all flag to link to all managed projects.`,
+You can specify projects in multiple ways:
+  - As arguments: cctx global link script api-gateway frontend
+  - Using --project flag: cctx -p api-gateway global link script
+  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx global link script
+  - Use --all to link to all projects: cctx global link script --all`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runGlobalLink,
 }
 
 // global unlink subcommand
 var globalUnlinkCmd = &cobra.Command{
-	Use:   "unlink <name> <project1> [project2...]",
+	Use:   "unlink <name> [<project1> <project2>...]",
 	Short: "Unlink a global context from specific projects",
 	Long: `Unlink a global context from one or more projects.
 
-Removes symlinks from the project directories and updates config.json.`,
-	Args: cobra.MinimumNArgs(2),
+Removes symlinks from the project directories and updates config.json.
+
+You can specify projects in multiple ways:
+  - As arguments: cctx global unlink script api-gateway frontend
+  - Using --project flag: cctx -p api-gateway global unlink script
+  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx global unlink script`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: runGlobalUnlink,
 }
 
@@ -343,13 +352,7 @@ func runGlobalEnable(cmd *cobra.Command, args []string) error {
 	}
 	successMsg("Updated configuration")
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Enable global context: %s", name)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	fmt.Println()
 	successMsg(fmt.Sprintf("Enabled global context: %s", name))
@@ -402,13 +405,7 @@ func runGlobalDisable(cmd *cobra.Command, args []string) error {
 	}
 	successMsg("Updated configuration")
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Disable global context: %s", name)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	fmt.Println()
 	successMsg(fmt.Sprintf("Disabled global context: %s", name))
@@ -536,13 +533,8 @@ func runGlobalLink(cmd *cobra.Command, args []string) error {
 			projectNames = append(projectNames, p.ContextName)
 		}
 		infoMsg(fmt.Sprintf("Linking '%s' to all %d projects", globalName, len(projectNames)))
-	} else {
-		// Use provided project names
-		if len(args) < 2 {
-			return fmt.Errorf("must specify at least one project or use --all flag")
-		}
-
-		// Resolve project names (handle "." for current directory)
+	} else if len(args) > 1 {
+		// Projects specified as arguments
 		for _, projectArg := range args[1:] {
 			resolvedName, err := resolveProjectName(projectArg, cfg)
 			if err != nil {
@@ -551,6 +543,17 @@ func runGlobalLink(cmd *cobra.Command, args []string) error {
 			projectNames = append(projectNames, resolvedName)
 		}
 		infoMsg(fmt.Sprintf("Linking '%s' to %d projects", globalName, len(projectNames)))
+	} else {
+		// Try to get from --project flag or env var
+		projectName, err := GetProjectContext(dataDir)
+		if err != nil {
+			return err
+		}
+		if projectName == "" {
+			return fmt.Errorf("no projects specified. Use --project flag, set CCTX_PROJECT, provide project names as arguments, or use --all")
+		}
+		projectNames = []string{projectName}
+		infoMsg(fmt.Sprintf("Linking '%s' to project: %s", globalName, projectName))
 	}
 
 	fmt.Println()
@@ -606,13 +609,7 @@ func runGlobalLink(cmd *cobra.Command, args []string) error {
 		successMsg("Updated configuration")
 	}
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Link global context '%s' to %d projects", globalName, linkedCount)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else if !dryRun && linkedCount > 0 {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
 		fmt.Println()
@@ -627,7 +624,7 @@ func runGlobalLink(cmd *cobra.Command, args []string) error {
 
 func runGlobalUnlink(cmd *cobra.Command, args []string) error {
 	globalName := normalizeGlobalName(args[0])
-	rawProjectNames := args[1:]
+	var projectNames []string
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -645,14 +642,26 @@ func runGlobalUnlink(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("global context not found: %s", globalName)
 	}
 
-	// Resolve project names (handle "." for current directory)
-	var projectNames []string
-	for _, projectArg := range rawProjectNames {
-		resolvedName, err := resolveProjectName(projectArg, cfg)
+	// Determine project names
+	if len(args) > 1 {
+		// Projects specified as arguments
+		for _, projectArg := range args[1:] {
+			resolvedName, err := resolveProjectName(projectArg, cfg)
+			if err != nil {
+				return err
+			}
+			projectNames = append(projectNames, resolvedName)
+		}
+	} else {
+		// Try to get from --project flag or env var
+		projectName, err := GetProjectContext(dataDir)
 		if err != nil {
 			return err
 		}
-		projectNames = append(projectNames, resolvedName)
+		if projectName == "" {
+			return fmt.Errorf("no projects specified. Use --project flag, set CCTX_PROJECT, or provide project names as arguments")
+		}
+		projectNames = []string{projectName}
 	}
 
 	infoMsg(fmt.Sprintf("Unlinking '%s' from %d projects", globalName, len(projectNames)))
@@ -711,13 +720,7 @@ func runGlobalUnlink(cmd *cobra.Command, args []string) error {
 		successMsg("Updated configuration")
 	}
 
-	// Git commit
-	commitMsg := fmt.Sprintf("Unlink global context '%s' from %d projects", globalName, unlinkedCount)
-	if err := common.GitCommit(dataDir, commitMsg, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to commit to git: %v", err))
-	} else if !dryRun && unlinkedCount > 0 {
-		successMsg("Committed changes to git")
-	}
+	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
 		fmt.Println()

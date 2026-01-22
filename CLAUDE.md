@@ -100,25 +100,53 @@ cctx unlink context-name --keep-content  # Keep context file
 # Create a new ticket workspace
 cctx ticket create TICKET-123 --title "Add feature" --tags "backend,api"
 
-# Link ticket to projects
-cctx ticket link TICKET-123 project1 project2
+# Link ticket to projects (using flags)
+cctx -t TICKET-123 ticket link project1 project2
+cctx -t TICKET-123 -p project1 ticket link
 
-# List tickets
-cctx ticket list
-cctx ticket list --status active
+# Or set environment variables for easier workflow
+export CCTX_TICKET=TICKET-123
+export CCTX_PROJECT=project1
+
+# Now commands are much simpler
+cctx ticket link                        # Links TICKET-123 to project1
+cctx ticket list                        # List tickets for project1
+cctx -p project2 ticket link           # Also link to project2
 
 # Show ticket details
-cctx ticket show TICKET-123
+cctx ticket show                        # Or: cctx -t TICKET-123 ticket show
 
-# Complete ticket
-cctx ticket complete TICKET-123 --commits "abc123,def456"
+# Complete ticket (auto-archives and removes from all projects)
+cctx ticket complete                    # Auto-detects branch + commit from current dir
+cctx ticket complete --commits "abc123,def456" --prs "42,43"  # Manual override
 
-# Archive ticket
-cctx ticket archive TICKET-123
+# Delete archived ticket permanently (if needed)
+cctx ticket delete --force
 
-# Delete ticket permanently
-cctx ticket delete TICKET-123 --force
+# Bulk Operations
+# Archive all active tickets at once (useful for sprint cleanup)
+cctx ticket archive-all                 # Archives all active tickets
+cctx ticket archive-all --force         # Skip confirmation
+
+# Remove all tickets from a specific project (tickets remain active)
+cctx -p project1 project reset          # Uses -p flag
+cd /path/to/project && cctx project reset  # Uses current directory
+export CCTX_PROJECT=project1 && cctx project reset  # Uses env var
 ```
+
+**Ticket Flag Usage:**
+- Use `--ticket` / `-t` flag or `CCTX_TICKET` env var to specify ticket
+- Use `--project` / `-p` flag or `CCTX_PROJECT` env var to specify project
+- Setting env vars once makes commands much more concise throughout the day
+
+**Auto-Complete Behavior:**
+- `ticket complete` automatically archives the ticket (removes symlinks from all projects)
+- Auto-detects git branch and latest commit from current directory
+- Manual `ticket archive` command is no longer needed
+
+**Bulk Operations:**
+- `ticket archive-all`: Archives all active tickets across all projects (useful for sprint cleanup)
+- `project reset`: Removes all ticket symlinks from one project (tickets remain active in ~/.cctx)
 
 ### Managing Global Contexts
 
