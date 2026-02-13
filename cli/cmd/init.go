@@ -19,17 +19,27 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize data directory",
+	Short: "Initialize cctx data directory (one-time setup)",
 	Long: `Initialize the Claude Context Manager data directory.
+
+⚠️  NOTE: This is NOT Claude Code's /init command!
+This is a ONE-TIME setup for cctx itself.
 
 By default, this creates ~/.cctx (or the directory specified by --data-dir flag
 or CCTX_DATA_DIR environment variable).
 
+You only need to run this ONCE after installing cctx.
+If you've already run it, you don't need to run it again.
+
 This command:
-- Creates the directory structure
+- Creates the directory structure (~/.cctx)
 - Sets up initial config.json
 - Copies template files
-- Migrates from old installation if detected`,
+- Migrates from old installation if detected
+
+After initialization, use:
+  cctx link <project-path>  - Link your first project
+  cctx list                 - List managed projects`,
 	RunE: runInit,
 }
 
@@ -48,11 +58,32 @@ func runInit(cmd *cobra.Command, args []string) error {
 	configPath := filepath.Join(dataDir, "config.json")
 	if common.FileExists(configPath) {
 		if !forceInit {
-			warningMsg(fmt.Sprintf("Already initialized at %s", dataDir))
-			infoMsg("Use --force to reinitialize")
+			fmt.Println()
+			successMsg(fmt.Sprintf("✓ Already initialized at: %s", dataDir))
+			fmt.Println()
+			infoMsg("This directory is ready to use. Common commands:")
+			infoMsg("  cctx list          - List managed projects")
+			infoMsg("  cctx link <path>   - Link a new project")
+			infoMsg("  cctx verify        - Check symlink health")
+			fmt.Println()
+			warningMsg("NOTE: This is NOT the same as Claude Code's /init command")
+			warningMsg("If you need to reinitialize (DANGEROUS), use: cctx init --force")
 			return nil
 		}
-		warningMsg("Forcing reinitialization...")
+
+		// Force reinitialization - require explicit confirmation
+		fmt.Println()
+		warningMsg("⚠️  WARNING: Force reinitialization will:")
+		warningMsg("   - Overwrite your existing config.json")
+		warningMsg("   - Potentially lose all project links and ticket data")
+		warningMsg("   - Require you to re-link all projects")
+		fmt.Println()
+		if !common.Confirm("Are you ABSOLUTELY SURE you want to reinitialize?", false) {
+			infoMsg("Cancelled. Your existing setup is unchanged.")
+			return nil
+		}
+		fmt.Println()
+		warningMsg("Proceeding with reinitialization...")
 	}
 
 	// Check if directory exists but is not initialized

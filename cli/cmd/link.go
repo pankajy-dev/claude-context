@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pankaj/claude-context/internal/clauderc"
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
 	"github.com/spf13/cobra"
@@ -167,6 +168,42 @@ func runLink(cmd *cobra.Command, args []string) error {
 				} else {
 					successMsg(fmt.Sprintf("Created global symlink: %s", filepath.Base(gc.Path)))
 					linkedGlobals = append(linkedGlobals, gc.Name)
+				}
+			}
+		}
+	}
+
+	// Update .clauderc to include symlinked files
+	// Only create/update .clauderc if it already exists OR we have global contexts to add
+	if !dryRun {
+		rcMgr := clauderc.NewManager(projectPath)
+
+		// Check if we have any enabled global contexts
+		hasEnabledGlobals := false
+		for _, gc := range cfg.GlobalContexts {
+			if gc.Enabled {
+				hasEnabledGlobals = true
+				break
+			}
+		}
+
+		// Only update .clauderc if it exists OR we have globals
+		// If only claude.md and no .clauderc exists, don't create it (auto-loaded)
+		if rcMgr.Exists() || hasEnabledGlobals {
+			// Add claude.md to .clauderc
+			if err := rcMgr.AddFile("claude.md", false); err != nil {
+				warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
+			} else {
+				successMsg("Updated .clauderc")
+			}
+
+			// Add global contexts to .clauderc
+			for _, gc := range cfg.GlobalContexts {
+				if gc.Enabled {
+					globalFileName := filepath.Base(gc.Path)
+					if err := rcMgr.AddFile(globalFileName, false); err != nil {
+						warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", globalFileName, err))
+					}
 				}
 			}
 		}

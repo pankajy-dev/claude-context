@@ -75,6 +75,49 @@ cctx init
 # If migrating from old version, init will automatically detect and migrate
 ```
 
+### Navigating to Data Directory
+
+```bash
+# RECOMMENDED: Source shell functions for best experience
+source /path/to/cctx-shell-functions.sh
+
+# Then use:
+cctx home                    # Actually cd to data directory!
+cctx home --list             # Show directory tree
+cctx home --open             # Open in file manager
+cctx home --shell            # Open new shell in data directory
+
+# Without shell functions (manual):
+cd $(cctx home)              # Navigate to data directory
+ls $(cctx home)/contexts     # List contexts
+
+# Common patterns for manual management
+cd $(cctx home)/contexts/_tickets/TICKET-123
+vim $(cctx home)/contexts/my-project/claude.md
+rm -rf $(cctx home)/contexts/_archived/old-ticket
+```
+
+#### Setup Shell Functions (Recommended)
+
+Add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+# For bash/zsh
+source /path/to/claude-context/cctx-shell-functions.sh
+
+# Or if installed globally, copy the file:
+# sudo cp cctx-shell-functions.sh /usr/local/etc/
+# source /usr/local/etc/cctx-shell-functions.sh
+```
+
+This provides:
+- `cctx home` - Actually cd to data directory (not just print path)
+- `cctx home --list` - Show directory tree
+- `cdhome` - Alias to cd to data directory
+- `cdtickets` - Alias to cd to tickets directory
+- `cdcontexts` - Alias to cd to contexts directory
+```
+
 ### Managing Projects
 
 ```bash

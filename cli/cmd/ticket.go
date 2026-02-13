@@ -242,6 +242,23 @@ Brief description here.
 		tags = splitAndTrim(ticketTags, ",")
 	}
 
+	// Try to detect current project for auto-linking
+	var linkedProjects []config.LinkedProject
+	projectName, _ := GetProjectContext(dataDir)
+	if projectName != "" {
+		// Auto-link to current project
+		project := cfg.GetProject(projectName)
+		if project != nil {
+			linkedProjects = append(linkedProjects, config.LinkedProject{
+				ContextName: projectName,
+				ProjectPath: project.ProjectPath,
+			})
+			if !dryRun {
+				infoMsg(fmt.Sprintf("Auto-detected project: %s", projectName))
+			}
+		}
+	}
+
 	// Create ticket metadata
 	ticket := config.Ticket{
 		TicketID:       ticketID,
@@ -249,7 +266,7 @@ Brief description here.
 		Status:         "active",
 		CreatedAt:      time.Now(),
 		LastModified:   time.Now(),
-		LinkedProjects: []config.LinkedProject{},
+		LinkedProjects: linkedProjects,
 		Tags:           tags,
 		Notes:          ticketNotes,
 	}
@@ -304,10 +321,17 @@ Brief description here.
 		}
 		infoMsg(fmt.Sprintf("Location: %s", ticketDir))
 		infoMsg(fmt.Sprintf("Symlink: %s", symlinkPath))
+		if len(ticket.LinkedProjects) > 0 {
+			infoMsg(fmt.Sprintf("Auto-linked to project: %s", ticket.LinkedProjects[0].ContextName))
+		}
 		fmt.Println()
 		infoMsg("Next steps:")
 		infoMsg(fmt.Sprintf("  1. Edit ticket context: vim %s", symlinkName))
-		infoMsg(fmt.Sprintf("  2. (Optional) Link to other projects: cctx ticket link %s <project>", ticketID))
+		if len(ticket.LinkedProjects) == 0 {
+			infoMsg(fmt.Sprintf("  2. Link to a project: cctx ticket link %s <project>", ticketID))
+		} else {
+			infoMsg(fmt.Sprintf("  2. (Optional) Link to other projects: cctx -t %s ticket link <project>", ticketID))
+		}
 	}
 
 	return nil
