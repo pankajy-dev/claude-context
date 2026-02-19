@@ -232,6 +232,7 @@ cctx cleanup --force            # Skip confirmation prompts
 
 ```bash
 # Create a ticket workspace
+# Automatically creates ticket.md and SESSIONS.md with symlinks
 cctx ticket create JIRA-123 --title "Add user authentication" --tags "backend,auth"
 
 # Link ticket to projects (using flags or env vars)

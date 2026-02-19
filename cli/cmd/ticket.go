@@ -234,6 +234,28 @@ Brief description here.
 			return fmt.Errorf("failed to create ticket file: %w", err)
 		}
 		successMsg("Created ticket.md")
+
+		// Create SESSIONS.md from template
+		sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+		sessionsTemplate := filepath.Join(dataDir, "templates", "sessions.md")
+
+		// Read template if it exists, otherwise use default content
+		var sessionsContent []byte
+		if common.FileExists(sessionsTemplate) {
+			sessionsContent, err = os.ReadFile(sessionsTemplate)
+			if err != nil {
+				warningMsg(fmt.Sprintf("Failed to read sessions template: %v", err))
+				sessionsContent = []byte(getDefaultSessionsContent())
+			}
+		} else {
+			sessionsContent = []byte(getDefaultSessionsContent())
+		}
+
+		if err := os.WriteFile(sessionsFile, sessionsContent, 0644); err != nil {
+			warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
+		} else {
+			successMsg("Created SESSIONS.md")
+		}
 	}
 
 	// Parse tags
@@ -288,11 +310,16 @@ Brief description here.
 
 	symlinkName := ticketID + ".md"
 	symlinkPath := filepath.Join(currentDir, symlinkName)
+	sessionsSymlinkName := "SESSIONS.md"
+	sessionsSymlinkPath := filepath.Join(currentDir, sessionsSymlinkName)
+	sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would create symlink: %s", symlinkPath))
+		dryRunMsg(fmt.Sprintf("Would create symlink: %s (for human reference only)", sessionsSymlinkPath))
 		dryRunMsg(fmt.Sprintf("Would add '%s' to .clauderc", symlinkName))
 	} else {
+		// Create ticket.md symlink
 		if common.FileExists(symlinkPath) {
 			warningMsg(fmt.Sprintf("File already exists: %s", symlinkPath))
 		} else {
@@ -300,15 +327,27 @@ Brief description here.
 				return fmt.Errorf("failed to create symlink: %w", err)
 			}
 			successMsg(fmt.Sprintf("Created symlink: %s", symlinkName))
+		}
 
-			// Update .clauderc
-			rcMgr := clauderc.NewManager(currentDir)
-			if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
+		// Create SESSIONS.md symlink
+		if common.FileExists(sessionsSymlinkPath) {
+			warningMsg(fmt.Sprintf("File already exists: %s", sessionsSymlinkPath))
+		} else {
+			if err := common.CreateSymlink(sessionsFile, sessionsSymlinkPath); err != nil {
+				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md symlink: %v", err))
 			} else {
-				successMsg("Updated .clauderc")
+				successMsg(fmt.Sprintf("Created symlink: %s", sessionsSymlinkName))
 			}
 		}
+
+		// Update .clauderc with ticket.md only (not SESSIONS.md - that's for human reference)
+		rcMgr := clauderc.NewManager(currentDir)
+		if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
+			warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
+		} else {
+			successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
+		}
+		// Note: SESSIONS.md is NOT added to .clauderc - it's for human reference only
 	}
 
 	// Git commit removed (no longer tracking in git)
@@ -1679,4 +1718,59 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// getDefaultSessionsContent returns the default content for SESSIONS.md
+func getDefaultSessionsContent() string {
+	return `# Development Sessions
+
+This file tracks interactions with Claude Code during ticket development.
+
+---
+
+## Session Template (copy for new sessions)
+
+` + "```markdown" + `
+## Session YYYY-MM-DD: [Brief Title]
+
+### Summary
+[One sentence summary]
+
+### What Was Done
+-
+
+### Key Decisions
+- **Decision**:
+  - **Rationale**:
+
+### Issues Resolved
+-
+
+### Files Changed
+-
+
+### Commands Used
+` + "```bash" + `
+
+` + "```" + `
+
+### Notes for Next Session
+- [ ]
+` + "```" + `
+
+---
+
+## Usage Instructions
+
+1. Copy the template above for each new session
+2. Fill in the date and title
+3. Document what was accomplished
+4. Note key decisions and rationale
+5. List issues that were resolved
+6. Track files that were changed
+7. Include important commands used
+8. Add any notes for the next session
+
+---
+`
 }
