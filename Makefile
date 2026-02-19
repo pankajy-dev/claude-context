@@ -67,10 +67,37 @@ clean:
 	@cd $(CLI_DIR)/cmd && rm -f *.bak *.bak[0-9] *.sh
 	@echo "✓ Clean complete"
 
-## test: Run tests
+## test: Run all tests
 test:
-	@echo "Running tests..."
+	@echo "Running all tests..."
 	cd $(CLI_DIR) && $(GO) test -v ./...
+
+## test-ticket: Run ticket-related tests only
+test-ticket:
+	@echo "Running ticket tests..."
+	cd $(CLI_DIR) && $(GO) test -v ./cmd -run Test_Ticket
+
+## test-link: Run link/unlink tests only
+test-link:
+	@echo "Running link tests..."
+	cd $(CLI_DIR) && $(GO) test -v ./cmd -run Test_Link
+
+## test-global: Run global context tests only
+test-global:
+	@echo "Running global context tests..."
+	cd $(CLI_DIR) && $(GO) test -v ./cmd -run Test_Global
+
+## test-integration: Run integration tests only
+test-integration:
+	@echo "Running integration tests..."
+	cd $(CLI_DIR) && $(GO) test -v ./cmd -run Integration
+
+## test-coverage: Run tests with coverage report
+test-coverage:
+	@echo "Running tests with coverage..."
+	cd $(CLI_DIR) && $(GO) test -v -coverprofile=coverage.out ./...
+	cd $(CLI_DIR) && $(GO) tool cover -html=coverage.out -o coverage.html
+	@echo "✓ Coverage report generated: cli/coverage.html"
 
 ## fmt: Format Go code
 fmt:

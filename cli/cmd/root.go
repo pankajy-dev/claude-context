@@ -139,6 +139,13 @@ func GetProjectContext(dataDir string) (string, error) {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
 
+	// Resolve symlinks in current directory for accurate comparison
+	currentDirResolved, err := filepath.EvalSymlinks(currentDir)
+	if err != nil {
+		// If we can't resolve, use the original path
+		currentDirResolved = currentDir
+	}
+
 	// Load config to check if current directory is a managed project
 	cfgMgr := config.NewManager(dataDir)
 	cfg, err := cfgMgr.Load()
@@ -148,7 +155,13 @@ func GetProjectContext(dataDir string) (string, error) {
 
 	// Check if current directory matches any managed project
 	for _, project := range cfg.ManagedProjects {
-		if project.ProjectPath == currentDir {
+		// Resolve symlinks in project path as well
+		projectPathResolved, err := filepath.EvalSymlinks(project.ProjectPath)
+		if err != nil {
+			projectPathResolved = project.ProjectPath
+		}
+
+		if projectPathResolved == currentDirResolved {
 			return project.ContextName, nil
 		}
 	}

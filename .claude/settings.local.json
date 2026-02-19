@@ -9,7 +9,9 @@
       "Bash(make build:*)",
       "Bash(./cctx:*)",
       "Bash(go vet:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(cctx ticket create:*)",
+      "Bash(make test-integration:*)"
     ]
   }
 }
