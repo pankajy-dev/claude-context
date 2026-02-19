@@ -9,6 +9,7 @@ A centralized CLI tool for managing `claude.md` context files across multiple pr
 - 🎫 **Ticket Workspaces**: Create temporary workspaces for tracking work across projects
 - 🌍 **Global Contexts**: Share common guidelines across all projects
 - ✅ **Health Checks**: Verify and auto-repair broken symlinks
+- 🧹 **Smart Cleanup**: Delete or restore orphaned symlinks and stale data
 - 🔧 **Customizable**: User-editable templates for contexts and tickets
 
 ## Installation
@@ -36,6 +37,137 @@ cctx init
 # Install to /usr/local/bin (requires sudo)
 make install-global
 ```
+
+### Shell Completion (Recommended)
+
+Enable tab completion for `cctx` commands:
+
+#### Zsh (macOS with Homebrew)
+
+```bash
+# Install completion script
+cctx completion zsh > $(brew --prefix)/share/zsh/site-functions/_cctx
+
+# Add Homebrew completions to fpath (add to ~/.zshrc if not already present)
+echo 'if type brew &>/dev/null; then' >> ~/.zshrc
+echo '  FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"' >> ~/.zshrc
+echo 'fi' >> ~/.zshrc
+
+# Restart your shell or run:
+exec zsh
+
+# Test it:
+# cctx <TAB>  (should show: cleanup, global, home, init, link, list, ticket, unlink, verify)
+```
+
+#### Zsh (Linux)
+
+```bash
+# Install completion script
+cctx completion zsh > "${fpath[1]}/_cctx"
+
+# Restart your shell or run:
+source ~/.zshrc
+```
+
+#### Bash
+
+```bash
+# Install completion script
+cctx completion bash > /usr/local/etc/bash_completion.d/cctx
+
+# Or for user-level install:
+mkdir -p ~/.bash_completion.d
+cctx completion bash > ~/.bash_completion.d/cctx
+echo 'source ~/.bash_completion.d/cctx' >> ~/.bashrc
+
+# Restart your shell or run:
+source ~/.bashrc
+```
+
+#### Fish
+
+```bash
+# Install completion script
+cctx completion fish > ~/.config/fish/completions/cctx.fish
+
+# Completions are loaded automatically
+```
+
+### Using Shell Completion
+
+Once installed, shell completion helps you discover commands, flags, and options. Here's how to use it:
+
+#### Complete Commands
+
+```bash
+cctx <TAB>
+# Shows: cleanup  completion  global  home  init  link  list  ticket  unlink  verify
+```
+
+#### Complete Subcommands
+
+```bash
+cctx ticket <TAB>
+# Shows: archive-all  complete  create  delete  link  list  show
+
+cctx global <TAB>
+# Shows: create  disable  enable  link  list  unlink
+```
+
+#### Complete Flags (type -- first)
+
+```bash
+cctx cleanup --<TAB>
+# Shows: --data-dir  --dry-run  --force  --help  --project  --restore  --ticket  --verbose
+
+cctx --<TAB>
+# Shows global flags: --data-dir  --dry-run  --help  --project  --ticket  --verbose
+
+cctx ticket create --<TAB>
+# Shows: --help  --tags  --title
+```
+
+#### Complete Short Flags (type - first)
+
+```bash
+cctx -<TAB>
+# Shows: -d  -h  -p  -t  -v
+
+cctx cleanup -<TAB>
+# Shows: -f  -h  -r  (plus global: -d, -p, -t, -v)
+```
+
+#### Partial Matching
+
+```bash
+cctx cle<TAB>
+# Completes to: cctx cleanup
+
+cctx cleanup --fo<TAB>
+# Completes to: cctx cleanup --force
+
+cctx ticket cr<TAB>
+# Completes to: cctx ticket create
+```
+
+#### Smart Context Completion
+
+```bash
+cctx unlink <TAB>
+# Shows your managed project names
+
+cctx -p <TAB>
+# Shows your managed project names
+
+cctx -t <TAB>
+# Shows your active ticket IDs
+
+cctx global link <TAB>
+# Shows available global context names
+```
+
+**Tip:** Always type `--` before pressing TAB to see flag completions. Without the prefix, the shell shows file completions instead.
 
 ## Quick Start
 
@@ -88,6 +220,12 @@ cctx unlink project-name
 # Verify all symlinks are healthy
 cctx verify
 cctx verify --fix  # Auto-repair broken links
+
+# Clean up orphaned symlinks and stale data
+cctx cleanup                    # Interactive - shows both delete and restore options
+cctx cleanup --restore          # Restore orphaned items to config.json
+cctx cleanup --dry-run          # Preview changes without executing
+cctx cleanup --force            # Skip confirmation prompts
 ```
 
 ### Ticket Workspaces
@@ -239,6 +377,21 @@ cctx verify
 
 # Auto-repair
 cctx verify --fix
+```
+
+### Orphaned Symlinks or Stale Data
+
+If you have symlinks or data that aren't tracked in config.json:
+
+```bash
+# Preview what would be cleaned
+cctx cleanup --dry-run --verbose
+
+# Option 1: Delete orphaned items
+cctx cleanup
+
+# Option 2: Restore orphaned items to config.json
+cctx cleanup --restore
 ```
 
 ### Command Not Found

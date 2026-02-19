@@ -73,6 +73,62 @@ make install-global      # Install to /usr/local/bin (requires sudo)
 cctx init
 
 # If migrating from old version, init will automatically detect and migrate
+
+# Optional: Enable shell completion (HIGHLY RECOMMENDED)
+# For zsh on macOS with Homebrew:
+cctx completion zsh > $(brew --prefix)/share/zsh/site-functions/_cctx
+
+# Add Homebrew completions to fpath (if not already in ~/.zshrc):
+echo 'if type brew &>/dev/null; then' >> ~/.zshrc
+echo '  FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"' >> ~/.zshrc
+echo 'fi' >> ~/.zshrc
+
+# Reload shell:
+exec zsh
+
+# Test: cctx <TAB> should show all commands
+
+# For zsh on Linux:
+cctx completion zsh > "${fpath[1]}/_cctx"
+source ~/.zshrc
+
+# For bash:
+cctx completion bash > ~/.bash_completion.d/cctx
+source ~/.bashrc
+
+# For fish:
+cctx completion fish > ~/.config/fish/completions/cctx.fish
+```
+
+### Using Shell Completion
+
+**Important:** Type `--` before pressing TAB to see flag completions!
+
+```bash
+# Complete commands
+cctx <TAB>                     # Shows all commands
+
+# Complete subcommands
+cctx ticket <TAB>              # Shows: create, link, list, show, complete, etc.
+cctx global <TAB>              # Shows: create, disable, enable, link, list, unlink
+
+# Complete flags (type -- first!)
+cctx cleanup --<TAB>           # Shows: --data-dir, --dry-run, --force, --restore, etc.
+cctx --<TAB>                   # Shows global flags
+cctx ticket create --<TAB>     # Shows: --help, --tags, --title
+
+# Complete short flags
+cctx -<TAB>                    # Shows: -d, -h, -p, -t, -v
+cctx cleanup -<TAB>            # Shows: -f, -r, etc.
+
+# Partial matching
+cctx cle<TAB>                  # Completes to: cctx cleanup
+cctx cleanup --fo<TAB>         # Completes to: cctx cleanup --force
+
+# Context-aware completion
+cctx unlink <TAB>              # Shows your managed projects
+cctx -p <TAB>                  # Shows your managed projects
+cctx -t <TAB>                  # Shows your active tickets
 ```
 
 ### Navigating to Data Directory
@@ -131,6 +187,27 @@ cctx list --verbose     # Show detailed information
 # Verify health of all symlinks
 cctx verify
 cctx verify --fix       # Auto-repair broken symlinks
+
+# Clean up orphaned symlinks and stale data
+cctx cleanup                    # Interactive - shows both delete and restore options
+cctx cleanup --verbose          # Show detailed information
+cctx cleanup --force            # Skip confirmation prompts
+cctx cleanup --dry-run          # Show what would be cleaned without making changes
+
+# Restore orphaned items to config.json instead of deleting
+cctx cleanup --restore          # Adds orphaned items back to config
+cctx cleanup --restore --verbose --dry-run  # Preview restore without changes
+
+# Example output (interactive mode):
+# Items to clean: 8
+#
+# You have two options:
+#   1. DELETE: Remove orphaned items from filesystem (default)
+#   2. RESTORE: Add orphaned items back to config.json
+#
+# To restore instead of delete, use: cctx cleanup --restore
+#
+# Proceed with cleanup (delete orphaned items)? [y/N]:
 
 # Unlink a project
 cctx unlink context-name
@@ -388,6 +465,64 @@ If you have an existing installation with data in the repository:
 
 - Run `cctx verify --fix` to recreate symlinks
 - Or specify new location: `export CCTX_DATA_DIR=/new/path`
+
+### Orphaned symlinks and stale data
+
+**Cause:** Symlinks or data directories remain after projects/tickets/globals are removed from config.json
+
+**Symptoms:**
+- Symlinks in project directories that aren't tracked in config
+- Context directories in `~/.cctx/contexts/` that don't have corresponding entries in config
+- Ticket directories in `~/.cctx/contexts/_tickets/` that aren't in config
+- Global context files in `~/.cctx/contexts/_global/` that aren't in config
+
+**Solution:**
+
+**Option 1: Delete orphaned items**
+```bash
+# Preview what would be cleaned
+cctx cleanup --dry-run --verbose
+
+# Clean up orphaned items (delete them)
+cctx cleanup
+
+# Skip confirmation prompts
+cctx cleanup --force
+```
+
+**Option 2: Restore orphaned items to config.json**
+```bash
+# Preview what would be restored
+cctx cleanup --restore --dry-run --verbose
+
+# Restore orphaned items to config.json
+cctx cleanup --restore
+
+# Skip confirmation prompts
+cctx cleanup --restore --force
+```
+
+The cleanup command will:
+- **Delete mode** (default): Remove orphaned items from filesystem
+- **Restore mode** (--restore): Add orphaned items back to config.json
+  - Orphaned context directories → Restored as managed projects (prompts for project path)
+  - Orphaned ticket directories → Restored as archived tickets
+  - Orphaned global files → Restored as disabled global contexts
+  - Orphaned symlinks → Cannot be automatically restored (manual cleanup needed)
+
+**Items detected:**
+- Orphaned symlinks from managed projects (tickets, globals, contexts)
+- Orphaned context directories not in config.json
+- Orphaned ticket directories not in config.json
+- Orphaned global context files not in config.json
+- Broken symlinks (pointing to non-existent targets)
+
+**When to use:**
+- After manually editing config.json
+- After removing projects/tickets without using unlink commands
+- Periodically to keep the data directory clean
+- After migrating from an old version
+- When you accidentally removed entries from config.json and want to restore them
 
 ### Custom data directory
 
