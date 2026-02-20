@@ -22,13 +22,17 @@ var ticketCmd = &cobra.Command{
 
 // ticket create subcommand
 var ticketCreateCmd = &cobra.Command{
-	Use:   "create <ticket-id>",
+	Use:   "create [<ticket-id>]",
 	Short: "Create a new ticket workspace",
 	Long: `Create a new ticket workspace for tracking work across multiple projects.
 
 Automatically creates a symlink in the current directory and updates .clauderc
-to include the ticket file.`,
-	Args: cobra.ExactArgs(1),
+to include the ticket file.
+
+If ticket-id is not provided, it will be auto-detected from the current git branch
+(only if the branch is not main/master). If a ticket with that name already exists,
+a suffix like -1, -2, etc. will be appended automatically.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketCreate,
 }
 
@@ -95,7 +99,7 @@ func init() {
 }
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	var ticketID string
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -107,9 +111,35 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Check if ticket already exists
-	if cfg.GetTicket(ticketID, true) != nil {
-		return fmt.Errorf("ticket already exists: %s", ticketID)
+	// Determine ticket ID: from args or auto-detect
+	if len(args) > 0 {
+		// Explicit ticket ID provided
+		ticketID = args[0]
+		if cfg.GetTicket(ticketID, true) != nil {
+			return fmt.Errorf("ticket already exists: %s", ticketID)
+		}
+	} else {
+		// Auto-detect from branch
+		branch := common.GetGitBranch()
+		if branch == "" || branch == "main" || branch == "master" {
+			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
+		}
+
+		// Find unique ticket ID by appending suffix if needed
+		ticketID = branch
+		originalID := ticketID
+		suffix := 0
+
+		for cfg.GetTicket(ticketID, true) != nil {
+			suffix++
+			ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
+		}
+
+		if suffix > 0 {
+			infoMsg(fmt.Sprintf("Ticket %s already exists, using: %s", originalID, ticketID))
+		} else {
+			infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
+		}
 	}
 
 	// Create ticket directory

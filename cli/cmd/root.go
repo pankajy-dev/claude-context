@@ -186,8 +186,8 @@ func GetProjectContextOrExit(dataDir string) string {
 	return projectName
 }
 
-// GetTicketID resolves the ticket ID from flag or environment variable
-// Priority: 1) --ticket flag, 2) CCTX_TICKET env var
+// GetTicketID resolves the ticket ID from flag, environment variable, or git branch
+// Priority: 1) --ticket flag, 2) CCTX_TICKET env var, 3) current git branch (if not main/master)
 // Returns the ticket ID or empty string if not found
 func GetTicketID() string {
 	// 1. Check --ticket flag
@@ -200,6 +200,12 @@ func GetTicketID() string {
 		return envTicket
 	}
 
+	// 3. Auto-detect from git branch (if not main/master)
+	branch := common.GetGitBranch()
+	if branch != "" && branch != "main" && branch != "master" {
+		return branch
+	}
+
 	return ""
 }
 
@@ -208,7 +214,7 @@ func GetTicketIDOrExit() string {
 	ticketID := GetTicketID()
 	if ticketID == "" {
 		errorMsg("No ticket ID provided")
-		errorMsg("Use --ticket/-t flag or set CCTX_TICKET env var")
+		errorMsg("Use --ticket/-t flag, set CCTX_TICKET env var, or checkout a feature branch")
 		os.Exit(1)
 	}
 	return ticketID
