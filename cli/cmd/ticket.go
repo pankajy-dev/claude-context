@@ -158,106 +158,11 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		// Create ticket.md from template
 		content := fmt.Sprintf(`# Ticket: %s
 
-## Summary
+## Jira Summary, description, and acceptance criteria etc.
 
-Brief description here.
+## Notes
 
----
-
-## Source & Requirements
-
-**Jira/Issue Link:**
-
-**Description:**
-
-**Acceptance Criteria:**
-- [ ]
-- [ ]
-- [ ]
-
-**Priority:** High/Medium/Low
-
-**Tags:**
-
-**Services/Repos:**
--
-
----
-
-## Research & Context
-
-**Background:**
-
-**Investigation Notes:**
-
-**Related Work:**
--
-
----
-
-## Discussions
-
-### YYYY-MM-DD - [Person/Team]
-
-**Topic:**
-
-**Decisions:**
--
-
-**Actions:**
-- [ ]
-
----
-
-## Technical Approach
-
-**Solution:**
-
-**Files to Change:**
--
-
-**Considerations:**
--
-
----
-
-## Implementation
-
-- [ ]
-- [ ]
-- [ ] Run tests
-- [ ] Update docs
-
----
-
-## Testing
-
-**Test Cases:**
-- [ ]
-- [ ]
-
-**Rollback:**
-
----
-
-## Work Log
-
-### YYYY-MM-DD
-
-**Done:**
--
-
-**Blockers:**
--
-
-**Next:**
--
-
----
-
-## References
-
--
+## For all the interaction with the claude, write the summary of interaction in [SESSIONS.md](SESSIONS.md) - This is a symlink to the SESSIONS.md file.
 
 `, ticketID)
 		if err := os.WriteFile(ticketFile, []byte(content), 0644); err != nil {
