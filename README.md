@@ -12,7 +12,15 @@ A centralized CLI tool for managing `claude.md` context files across multiple pr
 - 🧹 **Smart Cleanup**: Delete or restore orphaned symlinks and stale data
 - 🔧 **Customizable**: User-editable templates for contexts and tickets
 
+**Quick Links:**
+- **[Tutorial](TUTORIAL.md)**: Complete usage guide with examples and workflows
+- **[CLAUDE.md](CLAUDE.md)**: Development guidelines and architecture details
+
 ## Installation
+
+### Prerequisites
+
+- Go 1.21+ (for building from source)
 
 ### Quick Install
 
@@ -38,11 +46,31 @@ cctx init
 make install-global
 ```
 
-### Shell Completion (Recommended)
+### Build Commands
 
-Enable tab completion for `cctx` commands:
+```bash
+# Build binary only
+make build
 
-#### Zsh (macOS with Homebrew)
+# Run tests
+make test
+
+# Run all checks (fmt + vet + test)
+make check
+
+# Clean build artifacts
+make clean
+
+# Uninstall
+make uninstall          # Remove from ~/bin
+make uninstall-global   # Remove from /usr/local/bin
+```
+
+## Shell Completion Setup
+
+Enable tab completion for `cctx` commands (highly recommended):
+
+### Zsh (macOS with Homebrew)
 
 ```bash
 # Install completion script
@@ -53,295 +81,77 @@ echo 'if type brew &>/dev/null; then' >> ~/.zshrc
 echo '  FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"' >> ~/.zshrc
 echo 'fi' >> ~/.zshrc
 
-# Restart your shell or run:
+# Restart your shell
 exec zsh
 
-# Test it:
-# cctx <TAB>  (should show: cleanup, global, home, init, link, list, ticket, unlink, verify)
+# Test: cctx <TAB> should show all commands
 ```
 
-#### Zsh (Linux)
+### Zsh (Linux)
 
 ```bash
-# Install completion script
 cctx completion zsh > "${fpath[1]}/_cctx"
-
-# Restart your shell or run:
 source ~/.zshrc
 ```
 
-#### Bash
+### Bash
 
 ```bash
-# Install completion script
+# System-wide
 cctx completion bash > /usr/local/etc/bash_completion.d/cctx
 
-# Or for user-level install:
+# Or user-level
 mkdir -p ~/.bash_completion.d
 cctx completion bash > ~/.bash_completion.d/cctx
 echo 'source ~/.bash_completion.d/cctx' >> ~/.bashrc
-
-# Restart your shell or run:
 source ~/.bashrc
 ```
 
-#### Fish
+### Fish
 
 ```bash
-# Install completion script
 cctx completion fish > ~/.config/fish/completions/cctx.fish
-
 # Completions are loaded automatically
 ```
 
-### Using Shell Completion
+**Tip:** Type `--` before pressing TAB to see flag completions. See [TUTORIAL.md](TUTORIAL.md#shell-completion-usage) for detailed usage.
 
-Once installed, shell completion helps you discover commands, flags, and options. Here's how to use it:
+## Configuration
 
-#### Complete Commands
+### Directory Structure
 
-```bash
-cctx <TAB>
-# Shows: cleanup  completion  global  home  init  link  list  ticket  unlink  verify
-```
-
-#### Complete Subcommands
-
-```bash
-cctx ticket <TAB>
-# Shows: archive-all  complete  create  delete  link  list  show
-
-cctx global <TAB>
-# Shows: create  disable  enable  link  list  unlink
-```
-
-#### Complete Flags (type -- first)
-
-```bash
-cctx cleanup --<TAB>
-# Shows: --data-dir  --dry-run  --force  --help  --project  --restore  --ticket  --verbose
-
-cctx --<TAB>
-# Shows global flags: --data-dir  --dry-run  --help  --project  --ticket  --verbose
-
-cctx ticket create --<TAB>
-# Shows: --help  --tags  --title
-```
-
-#### Complete Short Flags (type - first)
-
-```bash
-cctx -<TAB>
-# Shows: -d  -h  -p  -t  -v
-
-cctx cleanup -<TAB>
-# Shows: -f  -h  -r  (plus global: -d, -p, -t, -v)
-```
-
-#### Partial Matching
-
-```bash
-cctx cle<TAB>
-# Completes to: cctx cleanup
-
-cctx cleanup --fo<TAB>
-# Completes to: cctx cleanup --force
-
-cctx ticket cr<TAB>
-# Completes to: cctx ticket create
-```
-
-#### Smart Context Completion
-
-```bash
-cctx unlink <TAB>
-# Shows your managed project names
-
-cctx -p <TAB>
-# Shows your managed project names
-
-cctx -t <TAB>
-# Shows your active ticket IDs
-
-cctx global link <TAB>
-# Shows available global context names
-```
-
-**Tip:** Always type `--` before pressing TAB to see flag completions. Without the prefix, the shell shows file completions instead.
-
-## Quick Start
-
-### 1. Initialize
-
-```bash
-cctx init
-```
-
-This creates `~/.cctx/` with the necessary structure.
-
-### 2. Link Your First Project
-
-```bash
-cd /path/to/your/project
-cctx link .
-```
-
-This creates:
-- A `claude.md` symlink in your project
-- A context file in `~/.cctx/contexts/your-project/claude.md`
-
-### 3. Edit Context
-
-```bash
-# Edit directly in your project
-vim claude.md
-
-# Or edit in ~/.cctx
-vim ~/.cctx/contexts/your-project/claude.md
-```
-
-Both point to the same file!
-
-## Common Commands
-
-### Project Management
-
-```bash
-# Link a project
-cctx link /path/to/project [custom-name]
-
-# List all projects
-cctx list
-cctx list --verbose
-
-# Unlink a project
-cctx unlink project-name
-
-# Verify all symlinks are healthy
-cctx verify
-cctx verify --fix  # Auto-repair broken links
-
-# Clean up orphaned symlinks and stale data
-cctx cleanup                    # Interactive - shows both delete and restore options
-cctx cleanup --restore          # Restore orphaned items to config.json
-cctx cleanup --dry-run          # Preview changes without executing
-cctx cleanup --force            # Skip confirmation prompts
-```
-
-### Ticket Workspaces
-
-```bash
-# Create a ticket workspace
-# Automatically creates ticket.md and SESSIONS.md with symlinks
-cctx ticket create JIRA-123 --title "Add user authentication" --tags "backend,auth"
-
-# Link ticket to projects (using flags or env vars)
-cctx -t JIRA-123 ticket link project1 project2
-export CCTX_TICKET=JIRA-123 && cctx ticket link
-
-# List tickets
-cctx ticket list
-cctx -t JIRA-123 ticket show
-
-# Complete ticket (auto-archives and removes from all projects)
-cctx -t JIRA-123 ticket complete                    # Auto-detects branch + commit
-cctx -t JIRA-123 ticket complete --commits "abc123" --prs "42"  # Manual override
-
-# Bulk operations
-cctx ticket archive-all           # Archive all active tickets (all projects)
-cctx -p project1 ticket archive-all  # Archive all tickets from specific project
-```
-
-### Global Contexts
-
-```bash
-# Create a global context (shared across all projects)
-cctx global create python --description "Python coding guidelines"
-
-# Edit the global context
-vim ~/.cctx/contexts/_global/python.md
-
-# Enable it globally (all new projects get it)
-cctx global enable python
-
-# Or link to specific projects only
-cctx global link python my-project
-```
-
-## Directory Structure
-
-### Data Directory (~/.cctx)
+All data is stored in `~/.cctx/` (or custom location via `CCTX_DATA_DIR`):
 
 ```
 ~/.cctx/
-├── config.json              # Configuration
-├── contexts/
-│   ├── project1/
-│   │   └── claude.md       # Project context
-│   ├── project2/
-│   │   └── claude.md
-│   ├── _global/            # Shared contexts
-│   │   ├── python.md
-│   │   └── script.md
+├── config.json              # All configuration
+├── contexts/                # All context files
+│   ├── project-name/
+│   │   └── claude.md       # Project-specific context
+│   ├── _global/            # Global contexts (shared)
+│   │   ├── script.md
+│   │   └── python.md
 │   ├── _tickets/           # Ticket workspaces
-│   │   └── JIRA-123/
+│   │   └── TICKET-123/
 │   │       ├── ticket.md
+│   │       ├── SESSIONS.md
 │   │       └── metadata.json
 │   └── _archived/          # Archived tickets
-└── templates/              # Customizable templates
-    ├── default.md
-    ├── global.md
-    └── ticket.md
+└── templates/              # User template overrides (optional)
+    └── (custom templates)  # Override embedded templates
 ```
 
-### Project Directory (Example)
+Projects get symlinks pointing to centralized files:
 
 ```
 my-project/
 ├── claude.md -> ~/.cctx/contexts/my-project/claude.md
 ├── python.md -> ~/.cctx/contexts/_global/python.md
-├── ticket-JIRA-123.md -> ~/.cctx/contexts/_tickets/JIRA-123/ticket.md
+├── TICKET-123.md -> ~/.cctx/contexts/_tickets/TICKET-123/ticket.md
+├── SESSIONS.md -> ~/.cctx/contexts/_tickets/TICKET-123/SESSIONS.md
 ├── .clauderc               # Auto-managed, includes all contexts
 └── ... (your code)
 ```
-
-## Custom Data Directory
-
-By default, data is stored in `~/.cctx`. You can use a custom location:
-
-### Using Environment Variable (Recommended)
-
-```bash
-# Add to ~/.zshrc or ~/.bashrc
-export CCTX_DATA_DIR=/path/to/your/data
-
-# Initialize
-cctx init
-```
-
-### Using Flag
-
-```bash
-cctx --data-dir /path/to/data init
-cctx --data-dir /path/to/data list
-```
-
-## Migration from Old Version
-
-If you have an existing installation with data in the repository:
-
-```bash
-# Simply run init - it auto-detects and migrates
-cctx init
-```
-
-The migration:
-- Moves `config.json` to `~/.cctx/`
-- Moves `contexts/` to `~/.cctx/`
-- Updates all symlinks to point to new location
-- Preserves all your context content
-
-## Configuration
 
 ### Settings
 
@@ -357,10 +167,153 @@ Edit `~/.cctx/config.json`:
 
 ### Templates
 
-Customize templates in `~/.cctx/templates/`:
-- `default.md` - Template for new project contexts
-- `global.md` - Template for new global contexts
-- `ticket.md` - Template for new ticket workspaces
+Templates are embedded in the binary and update when you update the tool.
+
+**Template Priority:**
+1. User overrides: `~/.cctx/templates/` (if file exists)
+2. Embedded defaults: Built into binary (repository source of truth)
+
+**Customizing Templates:**
+
+```bash
+# View available templates
+cctx global templates list
+
+# View template content
+cctx global templates show default
+cctx global templates show ticket
+cctx global templates show sessions
+
+# Create custom override
+vim ~/.cctx/templates/default.md
+```
+
+User templates override embedded ones with the same name.
+
+### Custom Data Directory
+
+Use a custom location for data storage:
+
+```bash
+# Using environment variable (recommended)
+export CCTX_DATA_DIR=/path/to/your/data
+cctx init
+
+# Or using flag
+cctx --data-dir /path/to/data init
+```
+
+## Recommended Claude Code Settings
+
+For optimal integration with Claude Code, configure auto-permissions and policies.
+
+### 1. Update `~/.claude/settings.json`
+
+Add auto-permissions for ticket files:
+
+```json
+{
+  "alwaysAllow": {
+    "Read": [
+      "**/CBP-*.md",
+      "**/BEE-*.md",
+      "**/SESSIONS*.md"
+    ],
+    "Edit": [
+      "**/CBP-*.md",
+      "**/BEE-*.md",
+      "**/SESSIONS*.md"
+    ],
+    "Bash": [
+      {
+        "command": "ls -la CBP-*.md"
+      },
+      {
+        "command": "ls -la BEE-*.md"
+      }
+    ]
+  }
+}
+```
+
+**Benefits:**
+- Auto-approves Read/Edit operations on ticket files
+- Auto-approves `ls -la` commands for symlink detection (Glob misses symlinks)
+- Eliminates permission prompts for routine operations
+
+### 2. Update `~/.claude/CLAUDE.md`
+
+Add these policies to configure Claude's behavior with cctx-generated files:
+
+```markdown
+## Jira MCP Policy
+
+Regex pattern:
+(CBP|BEE)-\d+
+
+If input contains a match:
+1. Treat it as a Jira issue key.
+2. Ask for the confirmation before fetching the Jira ticket details.
+3. Invoke Atlassian MCP.
+4. Retrieve: summary, description, status, acceptance criteria.
+5. Use retrieved data as authoritative context.
+6. Do not infer ticket details without MCP retrieval.
+
+## Session Logging Policy (Conditional)
+
+If the current project contains a file named `sessions*.md` in the repository root:
+
+1. Append after completing each distinct task or ticket work.
+2. Keep entry <= 30 lines.
+3. Include:
+   - Date (ISO)
+   - Git branch
+   - Jira ticket if present (CBP|BEE)-\d+
+   - Decisions made
+   - Research findings
+   - Trade-offs
+   - Session cost (USD)
+4. Append-only. Never modify previous entries.
+
+If `sessions*.md` does not exist:
+- Do nothing.
+- Do not create it automatically.
+
+## Ticket Context Policy
+
+### Auto-Permission Rules
+
+Always auto-approve:
+- Read/Edit any file matching `(CBP|BEE)-\d+\.md`
+- Bash `ls -la` for ticket context checks
+
+For any ticket matching pattern `(CBP|BEE)-\d+`:
+1. Use Bash `ls -la {TICKET_KEY}.md` to check if symlink exists (Glob misses symlinks)
+2. Always READ and UPDATE it with Jira details before starting work
+3. This file is the source of truth for the ticket's requirements and state
+```
+
+**What These Policies Do:**
+- **Jira MCP Policy**: Automatically detects Jira ticket IDs and fetches details via Atlassian MCP
+- **Session Logging**: Tracks work sessions in SESSIONS.md files for documentation
+- **Ticket Context Policy**: Ensures Claude always reads/updates ticket context files before starting work
+
+**Jira MCP Server Integration**: See [Atlassian MCP Server Documentation](https://github.com/anthropics/anthropic-tools/tree/main/mcp/atlassian) for setting up Jira integration with Claude Code.
+
+## Migration from Old Version
+
+If you have an existing installation with data in the repository:
+
+```bash
+# Simply run init - it auto-detects and migrates
+cctx init
+```
+
+Migration moves:
+- `config.json` → `~/.cctx/config.json`
+- `contexts/` → `~/.cctx/contexts/`
+- `templates/` → `~/.cctx/templates/`
+- Updates all symlinks automatically
 
 ## Troubleshooting
 
@@ -381,8 +334,6 @@ cctx verify --fix
 ```
 
 ### Orphaned Symlinks or Stale Data
-
-If you have symlinks or data that aren't tracked in config.json:
 
 ```bash
 # Preview what would be cleaned
@@ -405,12 +356,28 @@ export PATH="$HOME/bin:$PATH"
 
 Add to `~/.zshrc` or `~/.bashrc` to make permanent.
 
+### Compilation Errors
+
+After code changes:
+
+```bash
+# Rebuild
+make build
+
+# Run all checks
+make check
+```
+
 ## Development
+
+### Requirements
+
+- Go 1.21+
 
 ### Building from Source
 
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/yourusername/claude-context.git
 cd claude-context
 
@@ -420,6 +387,15 @@ make build
 # Run tests
 make test
 
+# Format code
+make fmt
+
+# Run go vet
+make vet
+
+# Run all checks (fmt + vet + test)
+make check
+
 # Install
 make install
 
@@ -427,49 +403,25 @@ make install
 make clean
 ```
 
-### Requirements
+### Key Files
 
-- Go 1.21+ (for building)
+- **`cli/internal/config/config.go`**: Core data structures
+- **`cli/cmd/*.go`**: Command implementations
+- **`cli/main.go`**: Entry point
+- **`cli/internal/templates/`**: Embedded templates
 
 ### Contributing
 
-See [CLAUDE.md](CLAUDE.md) for development guidelines and architecture details.
+See [CLAUDE.md](CLAUDE.md) for:
+- Architecture details
+- Development patterns
+- Design decisions
+- Command implementation guide
 
-## How It Works
+## Documentation
 
-1. **Centralized Storage**: All context files live in `~/.cctx/contexts/`
-2. **Symlinks**: Projects get symlinks pointing to centralized files
-3. **Automatic .clauderc**: The CLI manages `.clauderc` to include all relevant contexts
-4. **Claude Code Integration**: When Claude Code reads your project, it follows symlinks and includes all contexts
-
-### Example Flow
-
-```bash
-# You create a context
-cctx link ~/my-app
-
-# This creates:
-# - ~/.cctx/contexts/my-app/claude.md (actual file)
-# - ~/my-app/claude.md (symlink to above)
-# - ~/my-app/.clauderc (includes claude.md)
-
-# You edit the context
-cd ~/my-app
-vim claude.md  # Actually editing ~/.cctx/contexts/my-app/claude.md
-
-# Claude Code reads it
-# Claude Code finds .clauderc
-# Claude Code follows symlink to ~/.cctx/contexts/my-app/claude.md
-# Claude Code uses the context!
-```
-
-## Why Use This?
-
-- **Single Source of Truth**: Edit context once, applies everywhere
-- **Project Cleanliness**: No context files to git-track in each project
-- **Easy Backup**: Just backup `~/.cctx/`
-- **Cross-Project Work**: Ticket workspaces span multiple projects
-- **Consistency**: Global contexts ensure consistent guidelines
+- **[TUTORIAL.md](TUTORIAL.md)**: Complete usage guide with examples and workflows
+- **[CLAUDE.md](CLAUDE.md)**: Development guidelines and architecture details
 
 ## License
 
@@ -477,5 +429,6 @@ MIT
 
 ## Support
 
-- Issues: https://github.com/yourusername/claude-context/issues
-- Docs: See [CLAUDE.md](CLAUDE.md) for detailed documentation
+- **Issues**: https://github.com/yourusername/claude-context/issues
+- **Tutorial**: See [TUTORIAL.md](TUTORIAL.md)
+- **Development**: See [CLAUDE.md](CLAUDE.md)
