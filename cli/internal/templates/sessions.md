@@ -11,7 +11,7 @@ Track Claude Code interactions. Keep entries ≤30 lines. Append only.
 **Decisions/Findings:**
 - Key decision or finding with rationale
 
-**Cost:**
+**Cost:** Calculate on every write on this file.
 ```
 Total cost:            $X.XX
 Total duration (API):  Xm XXs
