@@ -11,7 +11,12 @@
       "Bash(go vet:*)",
       "Bash(go test:*)",
       "Bash(cctx ticket create:*)",
-      "Bash(make test-integration:*)"
+      "Bash(make test-integration:*)",
+      "Bash(cctx global templates --help:*)",
+      "Bash(wc:*)",
+      "mcp__atlassian__atlassianUserInfo",
+      "mcp__atlassian__getAccessibleAtlassianResources",
+      "mcp__atlassian__searchJiraIssuesUsingJql"
     ]
   }
 }

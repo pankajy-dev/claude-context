@@ -9,6 +9,7 @@ import (
 
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
+	"github.com/pankaj/claude-context/internal/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -117,6 +118,28 @@ var globalShowCmd = &cobra.Command{
 	RunE:  runGlobalShow,
 }
 
+// global templates subcommand
+var globalTemplatesCmd = &cobra.Command{
+	Use:   "templates",
+	Short: "Manage global context templates",
+	Long:  `List and view available global context templates.`,
+}
+
+var globalTemplatesListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all available templates",
+	Long:  `List all global context templates available in the templates directory.`,
+	RunE:  runGlobalTemplatesList,
+}
+
+var globalTemplatesShowCmd = &cobra.Command{
+	Use:   "show <template-name>",
+	Short: "Show content of a specific template",
+	Long:  `Display the contents of a specific template file.`,
+	Args:  cobra.ExactArgs(1),
+	RunE:  runGlobalTemplatesShow,
+}
+
 func init() {
 	rootCmd.AddCommand(globalCmd)
 
@@ -148,6 +171,11 @@ func init() {
 
 	// global show
 	globalCmd.AddCommand(globalShowCmd)
+
+	// global templates
+	globalCmd.AddCommand(globalTemplatesCmd)
+	globalTemplatesCmd.AddCommand(globalTemplatesListCmd)
+	globalTemplatesCmd.AddCommand(globalTemplatesShowCmd)
 }
 
 func runGlobalInit(cmd *cobra.Command, args []string) error {
@@ -831,4 +859,80 @@ func resolveProjectName(projectArg string, cfg *config.Config) (string, error) {
 
 	// Otherwise, return as-is (will be validated later)
 	return projectArg, nil
+}
+
+func runGlobalTemplatesList(cmd *cobra.Command, args []string) error {
+	dataDir := GetDataDirOrExit()
+
+	// Get all templates (merged from user + embedded)
+	tmplList, err := templates.ListTemplates(dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to list templates: %w", err)
+	}
+
+	if len(tmplList) == 0 {
+		infoMsg("No templates found")
+		return nil
+	}
+
+	// Print table
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	if verbose {
+		fmt.Fprintln(w, "TEMPLATE\tSOURCE\tPATH\t")
+	} else {
+		fmt.Fprintln(w, "TEMPLATE\tSOURCE\t")
+	}
+
+	for _, tmpl := range tmplList {
+		if verbose {
+			fmt.Fprintf(w, "%s\t%s\t%s\t\n", tmpl.Name, tmpl.Source, tmpl.Path)
+		} else {
+			fmt.Fprintf(w, "%s\t%s\t\n", tmpl.Name, tmpl.Source)
+		}
+	}
+
+	w.Flush()
+
+	fmt.Printf("\nTotal: %d templates\n", len(tmplList))
+	fmt.Printf("\nView template content: cctx global templates show <name>\n")
+	fmt.Printf("\nTemplates are loaded from:\n")
+	fmt.Printf("  1. User overrides: %s/templates/ (if exists)\n", dataDir)
+	fmt.Printf("  2. Embedded defaults: built into binary (source of truth)\n")
+
+	return nil
+}
+
+func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
+	templateName := args[0]
+
+	// Normalize template name (remove .md if provided)
+	templateName = strings.TrimSuffix(templateName, ".md")
+
+	dataDir := GetDataDirOrExit()
+
+	// Get template (checks user dir first, then embedded)
+	content, source, err := templates.GetTemplate(templateName, dataDir)
+	if err != nil {
+		return fmt.Errorf("%w\nAvailable templates: use 'cctx global templates list'", err)
+	}
+
+	// Display template info
+	fmt.Printf("Template: %s\n", templateName)
+	fmt.Printf("Source: %s", source)
+	if source == "user" {
+		fmt.Printf(" (%s/templates/%s.md)\n", dataDir, templateName)
+	} else {
+		fmt.Printf(" (built into binary)\n")
+	}
+	fmt.Println(strings.Repeat("-", 80))
+	fmt.Println(string(content))
+	fmt.Println(strings.Repeat("-", 80))
+
+	if source == "embedded" {
+		fmt.Println()
+		infoMsg(fmt.Sprintf("To customize this template, copy it to: %s/templates/%s.md", dataDir, templateName))
+	}
+
+	return nil
 }

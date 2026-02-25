@@ -204,13 +204,11 @@ func initializeFresh(dataDir string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	// Copy or create templates
-	if err := setupTemplates(dataDir); err != nil {
-		warningMsg(fmt.Sprintf("Warning: %v", err))
-		warningMsg("Using default templates")
-	}
-
 	successMsg(fmt.Sprintf("Initialized %s", dataDir))
+	infoMsg("")
+	infoMsg("Templates are embedded in the binary (source of truth)")
+	infoMsg(fmt.Sprintf("To customize templates, copy them to: %s/templates/", dataDir))
+	infoMsg("View templates: cctx global templates list")
 	infoMsg("")
 	infoMsg("Next steps:")
 	infoMsg("  1. Link your first project: cctx link /path/to/project")
@@ -252,21 +250,16 @@ func migrateOldInstallation(oldConfigPath, dataDir string) error {
 		}
 	}
 
-	// Copy templates directory
+	// Copy user-customized templates if they exist
 	oldTemplatesDir := filepath.Join(oldRoot, "templates")
 	newTemplatesDir := filepath.Join(dataDir, "templates")
 	if common.FileExists(oldTemplatesDir) {
-		infoMsg("Copying templates...")
+		infoMsg("Migrating user templates...")
 		if err := copyDir(oldTemplatesDir, newTemplatesDir); err != nil {
 			warningMsg(fmt.Sprintf("Failed to copy templates: %v", err))
-			// Continue with default templates
-			if err := setupTemplates(dataDir); err != nil {
-				warningMsg(fmt.Sprintf("Failed to create default templates: %v", err))
-			}
-		}
-	} else {
-		if err := setupTemplates(dataDir); err != nil {
-			warningMsg(fmt.Sprintf("Failed to create templates: %v", err))
+			warningMsg("Templates are now embedded in binary - you can recreate customizations later")
+		} else {
+			successMsg("User templates migrated (these will override embedded templates)")
 		}
 	}
 
@@ -395,68 +388,5 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// setupTemplates creates or copies template files
-func setupTemplates(dataDir string) error {
-	templatesDir := filepath.Join(dataDir, "templates")
-
-	// Template content
-	templates := map[string]string{
-		"default.md": `# {{PROJECT_NAME}}
-
-## Project Overview
-
-[Add project description here]
-
-## Key Files and Structure
-
-[List important files and their purposes]
-
-## Development Guidelines
-
-[Coding standards, patterns, conventions]
-
-## Dependencies
-
-[Key dependencies and their purposes]
-`,
-		"global.md": `# {{GLOBAL_NAME}} Context
-
-[Add global context content here]
-
-This context is shared across all projects that link to it.
-`,
-		"ticket.md": `# Ticket: {{TICKET_ID}}
-
-## Title
-{{TITLE}}
-
-## Description
-
-[Add ticket description and requirements]
-
-## Implementation Notes
-
-[Notes about implementation approach]
-
-## Testing
-
-[Testing strategy and checklist]
-
-## Related
-
-- PRs:
-- Commits:
-`,
-	}
-
-	for filename, content := range templates {
-		filepath := filepath.Join(templatesDir, filename)
-		if !common.FileExists(filepath) {
-			if err := os.WriteFile(filepath, []byte(content), 0644); err != nil {
-				return fmt.Errorf("failed to create template %s: %w", filename, err)
-			}
-		}
-	}
-
-	return nil
-}
+// setupTemplates is deprecated - templates are now embedded in the binary
+// User can manually copy templates to ~/.cctx/templates/ for customization
