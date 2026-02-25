@@ -85,72 +85,42 @@ func runLink(cmd *cobra.Command, args []string) error {
 
 	// Handle existing claude.md in project
 	projectClaudeMD := filepath.Join(projectPath, "claude.md")
+
+	// Concrete file stays in project, data dir symlinks to it
 	if common.FileExists(projectClaudeMD) && !common.IsSymlink(projectClaudeMD) {
-		infoMsg("Project already has claude.md file")
-
+		infoMsg("Project already has claude.md file - using existing")
 		if !dryRun {
-			// Prompt user for action
-			fmt.Println("Options:")
-			fmt.Println("1. Import existing content and replace with symlink")
-			fmt.Println("2. Backup existing file and create new empty claude.md")
-			fmt.Println("3. Cancel operation")
-
-			var choice int
-			fmt.Print("Enter choice [1-3]: ")
-			fmt.Scanln(&choice)
-
-			switch choice {
-			case 1:
-				// Import content
-				content, err := os.ReadFile(projectClaudeMD)
-				if err != nil {
-					return fmt.Errorf("failed to read existing claude.md: %w", err)
-				}
-				if err := os.WriteFile(contextFile, content, 0644); err != nil {
-					return fmt.Errorf("failed to write context file: %w", err)
-				}
-				successMsg("Imported existing claude.md content")
-
-			case 2:
-				// Backup existing file
-				backupFile := projectClaudeMD + ".backup"
-				if err := os.Rename(projectClaudeMD, backupFile); err != nil {
-					return fmt.Errorf("failed to backup existing file: %w", err)
-				}
-				successMsg(fmt.Sprintf("Backed up to: %s", backupFile))
-
-				// Create new empty file
-				if err := os.WriteFile(contextFile, []byte("# "+contextName+"\n\n"), 0644); err != nil {
-					return fmt.Errorf("failed to create context file: %w", err)
-				}
-
-			case 3:
-				infoMsg("Operation cancelled")
-				return nil
-
-			default:
-				return fmt.Errorf("invalid choice")
-			}
+			successMsg("Using existing claude.md")
 		}
-	} else {
-		// Create new empty context file
+	} else if common.IsSymlink(projectClaudeMD) {
+		// Old symlink exists - remove it
+		infoMsg("Removing old symlink")
 		if !dryRun {
-			template := fmt.Sprintf("# %s\n\n", contextName)
-			if err := os.WriteFile(contextFile, []byte(template), 0644); err != nil {
-				return fmt.Errorf("failed to create context file: %w", err)
+			if err := common.RemoveSymlink(projectClaudeMD); err != nil {
+				return fmt.Errorf("failed to remove old symlink: %w", err)
 			}
-			successMsg("Created context file")
 		}
 	}
 
-	// Create symlink
-	if dryRun {
-		dryRunMsg(fmt.Sprintf("Would create symlink: %s -> %s", projectClaudeMD, contextFile))
-	} else {
-		if err := common.CreateSymlink(contextFile, projectClaudeMD); err != nil {
-			return fmt.Errorf("failed to create symlink: %w", err)
+	// Create concrete file in project if it doesn't exist
+	if !common.FileExists(projectClaudeMD) {
+		if !dryRun {
+			template := fmt.Sprintf("# %s\n\n", contextName)
+			if err := os.WriteFile(projectClaudeMD, []byte(template), 0644); err != nil {
+				return fmt.Errorf("failed to create project claude.md: %w", err)
+			}
+			successMsg("Created claude.md in project")
 		}
-		successMsg(fmt.Sprintf("Created symlink: claude.md"))
+	}
+
+	// Create symlink in data dir pointing to project
+	if dryRun {
+		dryRunMsg(fmt.Sprintf("Would create data dir symlink: %s -> %s", contextFile, projectClaudeMD))
+	} else {
+		if err := common.CreateSymlink(projectClaudeMD, contextFile); err != nil {
+			return fmt.Errorf("failed to create data dir symlink: %w", err)
+		}
+		successMsg("Created data directory symlink")
 	}
 
 	// Link global contexts if enabled

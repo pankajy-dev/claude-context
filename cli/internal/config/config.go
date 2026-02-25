@@ -10,6 +10,7 @@ import (
 
 // Config represents the main configuration structure
 type Config struct {
+	SchemaVersion   int             `json:"schema_version,omitempty"` // 1=old, 2=new (default 1 for backwards compat)
 	ManagedProjects []Project       `json:"managed_projects"`
 	GlobalContexts  []GlobalContext `json:"global_contexts"`
 	Tickets         TicketSection   `json:"tickets"`
@@ -44,20 +45,21 @@ type TicketSection struct {
 
 // Ticket represents a ticket workspace
 type Ticket struct {
-	TicketID       string          `json:"ticket_id"`
-	Title          string          `json:"title"`
-	Status         string          `json:"status"`
-	CreatedAt      time.Time       `json:"created_at"`
-	LastModified   time.Time       `json:"last_modified"`
-	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
-	AbandonedAt    *time.Time      `json:"abandoned_at,omitempty"`
-	LinkedProjects []LinkedProject `json:"linked_projects"`
-	Tags           []string        `json:"tags"`
-	Notes          string          `json:"notes"`
-	Commits        []string        `json:"commits,omitempty"`
-	PullRequests   []string        `json:"pull_requests,omitempty"`
-	ArchivedPath   string          `json:"archived_path,omitempty"`
-	DocGenerated   bool            `json:"doc_generated,omitempty"`
+	TicketID           string          `json:"ticket_id"`
+	Title              string          `json:"title"`
+	Status             string          `json:"status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	LastModified       time.Time       `json:"last_modified"`
+	CompletedAt        *time.Time      `json:"completed_at,omitempty"`
+	AbandonedAt        *time.Time      `json:"abandoned_at,omitempty"`
+	LinkedProjects     []LinkedProject `json:"linked_projects"`
+	Tags               []string        `json:"tags"`
+	Notes              string          `json:"notes"`
+	Commits            []string        `json:"commits,omitempty"`
+	PullRequests       []string        `json:"pull_requests,omitempty"`
+	ArchivedPath       string          `json:"archived_path,omitempty"`
+	DocGenerated       bool            `json:"doc_generated,omitempty"`
+	PrimaryContextName string          `json:"primary_context_name,omitempty"` // Which project has concrete files (v2 schema)
 }
 
 // LinkedProject represents a project linked to a ticket
@@ -103,6 +105,11 @@ func (m *Manager) Load() (*Config, error) {
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Default to schema version 1 for backwards compatibility
+	if config.SchemaVersion == 0 {
+		config.SchemaVersion = 1
 	}
 
 	return &config, nil

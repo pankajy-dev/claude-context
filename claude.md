@@ -1,1 +1,0 @@
-/Users/pyadav/.cctx/contexts/claude-context/claude.md

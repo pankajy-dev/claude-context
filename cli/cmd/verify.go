@@ -81,60 +81,58 @@ func runVerify(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check claude.md symlink
+		// Check claude.md: project has concrete file, data dir has symlink
 		claudeMD := filepath.Join(project.ProjectPath, "claude.md")
 		contextFile := filepath.Join(dataDir, project.ContextPath)
 
 		if !common.FileExists(claudeMD) {
 			issues = append(issues, verifyIssue{
 				project:     project.ContextName,
-				issueType:   "missing-symlink",
-				description: "claude.md symlink is missing",
+				issueType:   "missing-file",
+				description: "claude.md file is missing (should be concrete file)",
 				fixable:     true,
 			})
-			fmt.Printf("  ✗ claude.md symlink missing\n")
-		} else if !common.IsSymlink(claudeMD) {
+			fmt.Printf("  ✗ claude.md missing\n")
+		} else if common.IsSymlink(claudeMD) {
 			issues = append(issues, verifyIssue{
 				project:     project.ContextName,
-				issueType:   "not-symlink",
-				description: "claude.md exists but is not a symlink",
+				issueType:   "unexpected-symlink",
+				description: "claude.md is a symlink (expected concrete file)",
 				fixable:     false,
 			})
-			fmt.Printf("  ✗ claude.md is not a symlink\n")
+			fmt.Printf("  ✗ claude.md should be concrete file, not symlink\n")
 		} else {
-			target, err := common.SymlinkTarget(claudeMD)
-			if err != nil || target != contextFile {
+			// Concrete file exists - check data dir symlink
+			if !common.FileExists(contextFile) {
 				issues = append(issues, verifyIssue{
 					project:     project.ContextName,
-					issueType:   "wrong-target",
-					description: fmt.Sprintf("claude.md points to wrong target: %s", target),
+					issueType:   "missing-data-symlink",
+					description: "Data dir symlink is missing",
 					fixable:     true,
 				})
-				fmt.Printf("  ✗ claude.md points to wrong target\n")
-			} else if !common.FileExists(contextFile) {
+				fmt.Printf("  ✗ Data dir symlink missing\n")
+			} else if !common.IsSymlink(contextFile) {
 				issues = append(issues, verifyIssue{
 					project:     project.ContextName,
-					issueType:   "broken-symlink",
-					description: "claude.md symlink target does not exist",
-					fixable:     true,
+					issueType:   "data-not-symlink",
+					description: "Data dir file is not a symlink",
+					fixable:     false,
 				})
-				fmt.Printf("  ✗ claude.md target missing\n")
+				fmt.Printf("  ✗ Data dir file should be symlink\n")
 			} else {
-				fmt.Printf("  ✓ claude.md OK\n")
+				target, _ := common.SymlinkTarget(contextFile)
+				if target != claudeMD {
+					issues = append(issues, verifyIssue{
+						project:     project.ContextName,
+						issueType:   "wrong-target",
+						description: fmt.Sprintf("Data dir symlink points to wrong target: %s", target),
+						fixable:     true,
+					})
+					fmt.Printf("  ✗ Data dir symlink wrong target\n")
+				} else {
+					fmt.Printf("  ✓ claude.md OK\n")
+				}
 			}
-		}
-
-		// Check context file exists
-		if !common.FileExists(contextFile) {
-			issues = append(issues, verifyIssue{
-				project:     project.ContextName,
-				issueType:   "missing-context",
-				description: "Context file does not exist",
-				fixable:     true,
-			})
-			fmt.Printf("  ✗ Context file missing\n")
-		} else {
-			fmt.Printf("  ✓ Context file OK\n")
 		}
 
 		// Check global context symlinks (based on tracked links in project)

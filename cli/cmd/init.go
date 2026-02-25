@@ -177,8 +177,9 @@ func initializeFresh(dataDir string) error {
 		}
 	}
 
-	// Create initial config.json
+	// Create initial config.json with v2 architecture
 	initialConfig := config.Config{
+		SchemaVersion:   2, // V2 architecture: concrete files in projects
 		ManagedProjects: []config.Project{},
 		GlobalContexts:  []config.GlobalContext{},
 		Tickets: config.TicketSection{

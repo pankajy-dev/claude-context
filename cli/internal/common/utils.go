@@ -214,3 +214,32 @@ func GetGitCommitShort() string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+// CopyFile copies a file from src to dst
+func CopyFile(src, dst string) error {
+	// Read source file
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("failed to read source file: %w", err)
+	}
+
+	// Get source file permissions
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat source file: %w", err)
+	}
+
+	// Ensure destination directory exists
+	dstDir := filepath.Dir(dst)
+	if err := EnsureDir(dstDir); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// Write destination file with same permissions
+	if err := os.WriteFile(dst, content, srcInfo.Mode()); err != nil {
+		return fmt.Errorf("failed to write destination file: %w", err)
+	}
+
+	return nil
+}
+

@@ -223,14 +223,6 @@ Add auto-permissions for ticket files:
       "**/CBP-*.md",
       "**/BEE-*.md",
       "**/SESSIONS*.md"
-    ],
-    "Bash": [
-      {
-        "command": "ls -la CBP-*.md"
-      },
-      {
-        "command": "ls -la BEE-*.md"
-      }
     ]
   }
 }
@@ -238,7 +230,6 @@ Add auto-permissions for ticket files:
 
 **Benefits:**
 - Auto-approves Read/Edit operations on ticket files
-- Auto-approves `ls -la` commands for symlink detection (Glob misses symlinks)
 - Eliminates permission prompts for routine operations
 
 ### 2. Update `~/.claude/CLAUDE.md`
@@ -285,12 +276,11 @@ If `sessions*.md` does not exist:
 
 Always auto-approve:
 - Read/Edit any file matching `(CBP|BEE)-\d+\.md`
-- Bash `ls -la` for ticket context checks
 
 For any ticket matching pattern `(CBP|BEE)-\d+`:
-1. Use Bash `ls -la {TICKET_KEY}.md` to check if symlink exists (Glob misses symlinks)
-2. Always READ and UPDATE it with Jira details before starting work
-3. This file is the source of truth for the ticket's requirements and state
+1. Always READ and UPDATE it with Jira details before starting work
+2. This file is the source of truth for the ticket's requirements and state
+3. Files are concrete (not symlinks), easily discoverable with Glob/Grep
 ```
 
 **What These Policies Do:**
@@ -299,23 +289,6 @@ For any ticket matching pattern `(CBP|BEE)-\d+`:
 - **Ticket Context Policy**: Ensures Claude always reads/updates ticket context files before starting work
 
 **Jira MCP Server Integration**: See [Atlassian MCP Server Documentation](https://github.com/anthropics/anthropic-tools/tree/main/mcp/atlassian) for setting up Jira integration with Claude Code.
-
-## Migration from Old Version
-
-If you have an existing installation with data in the repository:
-
-```bash
-# Simply run init - it auto-detects and migrates
-cctx init
-```
-
-Migration moves:
-- `config.json` → `~/.cctx/config.json`
-- `contexts/` → `~/.cctx/contexts/`
-- `templates/` → `~/.cctx/templates/`
-- Updates all symlinks automatically
-
-## Troubleshooting
 
 ### "Data directory not initialized"
 
@@ -408,7 +381,7 @@ make clean
 - **`cli/internal/config/config.go`**: Core data structures
 - **`cli/cmd/*.go`**: Command implementations
 - **`cli/main.go`**: Entry point
-- **`cli/internal/templates/`**: Embedded templates
+- **`cli/internal/templates/`**: Template source files (embedded into binary)
 
 ### Contributing
 

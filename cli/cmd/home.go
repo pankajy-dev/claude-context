@@ -22,10 +22,6 @@ var homeCmd = &cobra.Command{
 
 By default, prints the path to the data directory.
 
-💡 TIP: Source cctx-shell-functions.sh to make 'cctx home' actually cd!
-   Add to ~/.bashrc or ~/.zshrc:
-     source /path/to/cctx-shell-functions.sh
-
 Common usage patterns:
   cctx home                      # Print path: /Users/you/.cctx
   cd $(cctx home)                # Navigate to data directory

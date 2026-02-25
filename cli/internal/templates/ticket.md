@@ -28,4 +28,4 @@ Fetch the Jira ticket details for ticket {{TICKET_ID}} using the Atlassian MCP s
 
 ## Session Tracking
 
-For all the interaction with Claude, write the summary of interaction in the SESSIONS file (look for file with prefix `SESSIONS` - it's a symlink to the SESSIONS.md file).
+For all the interaction with Claude, write the summary of interaction in the SESSIONS file (look for file with prefix `SESSIONS`).

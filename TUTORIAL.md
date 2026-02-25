@@ -338,24 +338,18 @@ vim ~/.cctx/templates/my-custom.md
 
 **Template Priority:**
 1. User overrides: `~/.cctx/templates/` (if file exists)
-2. Embedded defaults: Built into binary (repository source of truth)
+2. Embedded defaults: Built into binary from `cli/internal/templates/`
 
 ## Navigating to Data Directory
 
-### Using Shell Functions (Recommended)
-
-First, source the shell functions:
+### Using the home Command
 
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
-source /path/to/claude-context/cctx-shell-functions.sh
-```
-
-Then use:
-
-```bash
-# Actually cd to data directory (not just print path)
+# Print path to data directory
 cctx home
+
+# Navigate to data directory
+cd $(cctx home)
 
 # Show directory tree
 cctx home --list
@@ -366,10 +360,9 @@ cctx home --open
 # Open new shell in data directory
 cctx home --shell
 
-# Convenience aliases
-cdhome        # Alias to cd to data directory
-cdtickets     # cd to tickets directory
-cdcontexts    # cd to contexts directory
+# Useful patterns
+cd $(cctx home)/contexts/_tickets    # Navigate to tickets
+ls $(cctx home)/contexts              # List all contexts
 ```
 
 ### Manual Navigation
@@ -640,7 +633,6 @@ cctx init
 # Migration moves:
 # - config.json → ~/.cctx/config.json
 # - contexts/ → ~/.cctx/contexts/
-# - templates/ → ~/.cctx/templates/
 # - Updates all symlinks automatically
 ```
 
