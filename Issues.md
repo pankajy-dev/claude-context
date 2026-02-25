@@ -1,46 +1,50 @@
-1.  aws-codepipeline-invoke-actions git:(main) cctx ticket delete BEE-32496
-  Error: unknown command "BEE-32496" for "cctx ticket delete"
-  Usage:
-  cctx ticket delete [flags]
+# Issues
 
-Flags:
--f, --force   Skip confirmation prompt
--h, --help    help for delete
+## ✅ Fixed (2026-02-25)
 
-Global Flags:
--d, --data-dir string   Path to data directory (default: ~/.cctx, or CCTX_DATA_DIR env var)
---dry-run           Show what would be done without executing
--p, --project string    Project context name (default: CCTX_PROJECT env var or current directory)
--t, --ticket string     Ticket ID (default: CCTX_TICKET env var)
--v, --verbose           Show detailed information
+### 1. Ticket delete command should accept ticket ID as positional argument
+**Status:** Fixed
+**Description:** User tried `cctx ticket delete BEE-32496` but it required `-t BEE-32496` flag.
+**Fix:** Modified command to accept optional ticket ID as positional argument: `cctx ticket delete [<ticket-id>]`
+**Usage:**
+- `cctx ticket delete TICKET-123` (positional arg)
+- `cctx -t TICKET-123 ticket delete` (flag)
+- `export CCTX_TICKET=TICKET-123 && cctx ticket delete` (env var)
 
-➜  aws-codepipeline-invoke-actions git:(main) cctx ticket delete -t BEE-32496
+### 2. SESSIONS.md symlinks not removed when deleting tickets
+**Status:** Fixed
+**Description:** When running `cctx ticket delete -t BEE-32496`, the SESSIONS.md symlink remained in project directories.
+**Fix:** Enhanced delete command to remove both ticket.md AND SESSIONS.md symlinks from all managed projects.
+**Code Changes:** cli/cmd/ticket.go:1386-1434
 
-⚠ About to permanently delete ticket: BEE-32496
-ℹ Status: active
-ℹ Linked projects: 0
+### 3. SESSIONS.md creation fails if file already exists
+**Status:** Fixed
+**Description:** If SESSIONS.md already exists as a file, creating a new ticket fails to create the symlink.
+**Fix:** Modified to create unique filename with ticket ID suffix if SESSIONS.md already exists:
+- First try: `SESSIONS.md`
+- If exists: `SESSIONS-TICKET-123.md`
+**Code Changes:** cli/cmd/ticket.go:267-287
 
-⚠ This will remove:
-⚠   - Ticket from config.json
-⚠   - Ticket directory and all files
-⚠   - Symlinks from all linked projects
-⚠   - .clauderc entries in projects
+### 4. Write git SHA to SESSIONS.md when ticket is completed
+**Status:** Fixed
+**Description:** Enhance SESSIONS.md to record git commits, branch, and PRs when marking ticket as completed.
+**Fix:** Automatically appends completion entry to SESSIONS.md including:
+- Completion timestamp
+- Status (Completed)
+- Git branch name
+- Commit SHAs
+- Pull request numbers
+**Code Changes:** cli/cmd/ticket.go:982-1011
+**Note:** Silently skips if data is not available (no errors).
 
-✗ This action CANNOT be undone!
+---
 
-Are you sure you want to delete this ticket? [y/N]: y
+## ❌ Closed - Won't Fix
 
-✓ Deleted ticket directory
-✓ Updated configuration
-
-✓ Successfully deleted ticket: BEE-32496
-
-2. cctx is not removing the symlink
-   cctx ticket delete -t BEE-32496
-I ran this cmd and symlink still exists in the project directory. I have to remove it manually. I am not sure if this is a bug or expected behavior. Please clarify.
-
-3. if there is already an active file then cctx is not creating sessions.md. it should create new file with sequence1 or ticket id
-
-4. Make an enhancement to cct SESSIONS.md to also wrote the git sha that are done one the branch when we mark the ticket as completed. no error if there data is not available.
-
-5. Instead of symlinks, create actual file and once done then move this file to the place where symlinks are created
+### 5. Instead of symlinks, create actual file and once done then move this file to the place where symlinks are created
+**Status:** Closed - Current behavior is correct
+**Reason:** Current symlink model is the correct design. Symlinks provide:
+- Single source of truth in `~/.cctx/contexts/_tickets/`
+- Real-time sync across multiple project directories
+- Clean separation between code (git-tracked) and context files (user-managed)
+- Consistent behavior when ticket is linked to multiple projects

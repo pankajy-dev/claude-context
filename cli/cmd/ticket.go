@@ -264,14 +264,33 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			successMsg(fmt.Sprintf("Created symlink: %s", symlinkName))
 		}
 
-		// Create SESSIONS.md symlink
+		// Create SESSIONS.md symlink (with unique name if exists)
+		finalSessionsSymlinkPath := sessionsSymlinkPath
+		finalSessionsSymlinkName := sessionsSymlinkName
 		if common.FileExists(sessionsSymlinkPath) {
-			warningMsg(fmt.Sprintf("File already exists: %s", sessionsSymlinkPath))
+			// Find unique name with suffix
+			suffix := 1
+			for {
+				finalSessionsSymlinkName = fmt.Sprintf("SESSIONS-%s.md", ticketID)
+				finalSessionsSymlinkPath = filepath.Join(currentDir, finalSessionsSymlinkName)
+				if !common.FileExists(finalSessionsSymlinkPath) {
+					break
+				}
+				suffix++
+				if suffix > 100 {
+					warningMsg("Could not find unique name for SESSIONS.md")
+					break
+				}
+			}
+		}
+
+		if common.FileExists(finalSessionsSymlinkPath) {
+			warningMsg(fmt.Sprintf("File already exists: %s", finalSessionsSymlinkPath))
 		} else {
-			if err := common.CreateSymlink(sessionsFile, sessionsSymlinkPath); err != nil {
+			if err := common.CreateSymlink(sessionsFile, finalSessionsSymlinkPath); err != nil {
 				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md symlink: %v", err))
 			} else {
-				successMsg(fmt.Sprintf("Created symlink: %s", sessionsSymlinkName))
+				successMsg(fmt.Sprintf("Created symlink: %s", finalSessionsSymlinkName))
 			}
 		}
 
@@ -960,8 +979,45 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Move ticket to archived
+	// Append completion info to SESSIONS.md before archiving
 	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+	sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+	if common.FileExists(sessionsFile) {
+		completionEntry := fmt.Sprintf("\n\n---\n\n## Ticket Completed: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+		completionEntry += fmt.Sprintf("**Status:** Completed\n\n")
+		if branch != "" {
+			completionEntry += fmt.Sprintf("**Branch:** %s\n\n", branch)
+		}
+		if len(ticket.Commits) > 0 {
+			completionEntry += "**Commits:**\n"
+			for _, commit := range ticket.Commits {
+				completionEntry += fmt.Sprintf("- %s\n", commit)
+			}
+			completionEntry += "\n"
+		}
+		if len(ticket.PullRequests) > 0 {
+			completionEntry += "**Pull Requests:**\n"
+			for _, pr := range ticket.PullRequests {
+				completionEntry += fmt.Sprintf("- %s\n", pr)
+			}
+			completionEntry += "\n"
+		}
+
+		// Append to SESSIONS.md
+		f, err := os.OpenFile(sessionsFile, os.O_APPEND|os.O_WRONLY, 0644)
+		if err == nil {
+			defer f.Close()
+			if _, err := f.WriteString(completionEntry); err != nil {
+				warningMsg(fmt.Sprintf("Failed to append to SESSIONS.md: %v", err))
+			} else {
+				successMsg("Updated SESSIONS.md with completion info")
+			}
+		} else {
+			warningMsg(fmt.Sprintf("Failed to open SESSIONS.md: %v", err))
+		}
+	}
+
+	// Move ticket to archived
 	archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
 
 	if err := common.EnsureDir(filepath.Dir(archivedDir)); err != nil {
@@ -1218,7 +1274,7 @@ Specify the ticket using:
 
 // ticket delete subcommand
 var ticketDeleteCmd = &cobra.Command{
-	Use:   "delete",
+	Use:   "delete [<ticket-id>]",
 	Short: "Permanently delete a ticket",
 	Long: `Permanently delete a ticket and all associated files.
 
@@ -1231,9 +1287,10 @@ This removes:
 This action cannot be undone.
 
 Specify the ticket using:
+  - Positional arg: cctx ticket delete TICKET-123
   - Flag: cctx -t TICKET-123 ticket delete
   - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket delete`,
-	Args: cobra.NoArgs,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketDelete,
 }
 
@@ -1327,7 +1384,14 @@ func splitAndTrim(s string, sep string) []string {
 }
 
 func runTicketDelete(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	var ticketID string
+
+	// Get ticket ID from args or flag/env
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		ticketID = GetTicketIDOrExit()
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1383,26 +1447,47 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 	// This handles cases where symlinks exist but weren't tracked in LinkedProjects
 	for _, project := range cfg.ManagedProjects {
 		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+		sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
 
-		// Check if symlink exists
-		if !common.FileExists(symlinkPath) {
+		// Check if ticket symlink exists
+		ticketSymlinkExists := common.FileExists(symlinkPath)
+		sessionsSymlinkExists := common.FileExists(sessionsSymlinkPath)
+
+		if !ticketSymlinkExists && !sessionsSymlinkExists {
 			continue
 		}
 
 		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would remove symlink from %s", project.ContextName))
-			dryRunMsg("Would remove from .clauderc")
+			if ticketSymlinkExists {
+				dryRunMsg(fmt.Sprintf("Would remove ticket symlink from %s", project.ContextName))
+				dryRunMsg("Would remove from .clauderc")
+			}
+			if sessionsSymlinkExists {
+				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md symlink from %s", project.ContextName))
+			}
 		} else {
-			if err := common.RemoveSymlink(symlinkPath); err != nil {
-				warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", project.ContextName, err))
-			} else {
-				successMsg(fmt.Sprintf("Removed symlink from %s", project.ContextName))
+			// Remove ticket symlink
+			if ticketSymlinkExists {
+				if err := common.RemoveSymlink(symlinkPath); err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove ticket symlink from %s: %v", project.ContextName, err))
+				} else {
+					successMsg(fmt.Sprintf("Removed ticket symlink from %s", project.ContextName))
+				}
+
+				// Update .clauderc
+				rcMgr := clauderc.NewManager(project.ProjectPath)
+				if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
+					warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", project.ContextName, err))
+				}
 			}
 
-			// Update .clauderc
-			rcMgr := clauderc.NewManager(project.ProjectPath)
-			if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", project.ContextName, err))
+			// Remove SESSIONS.md symlink
+			if sessionsSymlinkExists {
+				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md symlink from %s: %v", project.ContextName, err))
+				} else {
+					successMsg(fmt.Sprintf("Removed SESSIONS.md symlink from %s", project.ContextName))
+				}
 			}
 		}
 	}
