@@ -100,6 +100,7 @@ func init() {
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
 	var ticketID string
+	var linkToExisting bool
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -111,12 +112,65 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Try to detect current project for context
+	currentProject, _ := GetProjectContext(dataDir)
+
 	// Determine ticket ID: from args or auto-detect
 	if len(args) > 0 {
 		// Explicit ticket ID provided
 		ticketID = args[0]
-		if cfg.GetTicket(ticketID, true) != nil {
-			return fmt.Errorf("ticket already exists: %s", ticketID)
+		existingTicket := cfg.GetTicket(ticketID, true)
+
+		if existingTicket != nil {
+			// Check if ticket is already linked to current project
+			isLinkedToCurrent := false
+			if currentProject != "" {
+				for _, lp := range existingTicket.LinkedProjects {
+					if lp.ContextName == currentProject {
+						isLinkedToCurrent = true
+						break
+					}
+				}
+			}
+
+			if isLinkedToCurrent {
+				return fmt.Errorf("ticket %s already exists and is linked to project: %s", ticketID, currentProject)
+			}
+
+			// Ticket exists but not linked to current project
+			fmt.Println()
+			warningMsg(fmt.Sprintf("Ticket '%s' already exists", ticketID))
+			if len(existingTicket.LinkedProjects) > 0 {
+				projectNames := []string{}
+				for _, lp := range existingTicket.LinkedProjects {
+					projectNames = append(projectNames, lp.ContextName)
+				}
+				infoMsg(fmt.Sprintf("Linked to: %s", strings.Join(projectNames, ", ")))
+			}
+			if existingTicket.Title != "" {
+				infoMsg(fmt.Sprintf("Title: %s", existingTicket.Title))
+			}
+			fmt.Println()
+
+			// Ask user what to do
+			if !dryRun {
+				linkToExisting = common.Confirm("Link existing ticket to current project?", true)
+				fmt.Println()
+			}
+
+			if linkToExisting {
+				// User wants to link to existing ticket - skip creation
+				infoMsg(fmt.Sprintf("Using existing ticket: %s", ticketID))
+			} else {
+				// User wants to create new ticket with suffix
+				originalID := ticketID
+				suffix := 1
+				for cfg.GetTicket(ticketID, true) != nil {
+					ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
+					suffix++
+				}
+				infoMsg(fmt.Sprintf("Creating new ticket: %s", ticketID))
+			}
 		}
 	} else {
 		// Auto-detect from branch
@@ -142,21 +196,22 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create ticket directory
+	// Create ticket directory and files (skip if linking to existing)
 	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
 	ticketFile := filepath.Join(ticketDir, "ticket.md")
 
-	if dryRun {
-		dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
-		dryRunMsg(fmt.Sprintf("Would create ticket file: %s", ticketFile))
-	} else {
-		if err := common.EnsureDir(ticketDir); err != nil {
-			return fmt.Errorf("failed to create ticket directory: %w", err)
-		}
-		successMsg(fmt.Sprintf("Created ticket directory"))
+	if !linkToExisting {
+		if dryRun {
+			dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
+			dryRunMsg(fmt.Sprintf("Would create ticket file: %s", ticketFile))
+		} else {
+			if err := common.EnsureDir(ticketDir); err != nil {
+				return fmt.Errorf("failed to create ticket directory: %w", err)
+			}
+			successMsg(fmt.Sprintf("Created ticket directory"))
 
-		// Create ticket.md from template
-		content := fmt.Sprintf(`# Ticket: %s
+			// Create ticket.md from template
+			content := fmt.Sprintf(`# Ticket: %s
 
 ## Jira Summary, description, and acceptance criteria etc.
 
@@ -165,31 +220,32 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 ## For all the interaction with the claude, write the summary of interaction in [SESSIONS.md](SESSIONS.md) - This is a symlink to the SESSIONS.md file.
 
 `, ticketID)
-		if err := os.WriteFile(ticketFile, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to create ticket file: %w", err)
-		}
-		successMsg("Created ticket.md")
+			if err := os.WriteFile(ticketFile, []byte(content), 0644); err != nil {
+				return fmt.Errorf("failed to create ticket file: %w", err)
+			}
+			successMsg("Created ticket.md")
 
-		// Create SESSIONS.md from template
-		sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-		sessionsTemplate := filepath.Join(dataDir, "templates", "sessions.md")
+			// Create SESSIONS.md from template
+			sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+			sessionsTemplate := filepath.Join(dataDir, "templates", "sessions.md")
 
-		// Read template if it exists, otherwise use default content
-		var sessionsContent []byte
-		if common.FileExists(sessionsTemplate) {
-			sessionsContent, err = os.ReadFile(sessionsTemplate)
-			if err != nil {
-				warningMsg(fmt.Sprintf("Failed to read sessions template: %v", err))
+			// Read template if it exists, otherwise use default content
+			var sessionsContent []byte
+			if common.FileExists(sessionsTemplate) {
+				sessionsContent, err = os.ReadFile(sessionsTemplate)
+				if err != nil {
+					warningMsg(fmt.Sprintf("Failed to read sessions template: %v", err))
+					sessionsContent = []byte(getDefaultSessionsContent())
+				}
+			} else {
 				sessionsContent = []byte(getDefaultSessionsContent())
 			}
-		} else {
-			sessionsContent = []byte(getDefaultSessionsContent())
-		}
 
-		if err := os.WriteFile(sessionsFile, sessionsContent, 0644); err != nil {
-			warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
-		} else {
-			successMsg("Created SESSIONS.md")
+			if err := os.WriteFile(sessionsFile, sessionsContent, 0644); err != nil {
+				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
+			} else {
+				successMsg("Created SESSIONS.md")
+			}
 		}
 	}
 
@@ -216,25 +272,54 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create ticket metadata
-	ticket := config.Ticket{
-		TicketID:       ticketID,
-		Title:          ticketTitle,
-		Status:         "active",
-		CreatedAt:      time.Now(),
-		LastModified:   time.Now(),
-		LinkedProjects: linkedProjects,
-		Tags:           tags,
-		Notes:          ticketNotes,
-	}
+	// Create or update ticket metadata
+	if linkToExisting {
+		// Link existing ticket to current project
+		existingTicket := cfg.GetTicket(ticketID, true)
+		if existingTicket != nil && projectName != "" {
+			// Check if project is already linked
+			alreadyLinked := false
+			for _, lp := range existingTicket.LinkedProjects {
+				if lp.ContextName == projectName {
+					alreadyLinked = true
+					break
+				}
+			}
 
-	// Add to config
-	if !dryRun {
-		cfg.Tickets.Active = append(cfg.Tickets.Active, ticket)
-		if err := cfgMgr.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+			if !alreadyLinked {
+				// Add current project to linked projects
+				existingTicket.LinkedProjects = append(existingTicket.LinkedProjects, linkedProjects...)
+				existingTicket.LastModified = time.Now()
+
+				if !dryRun {
+					if err := cfgMgr.Save(cfg); err != nil {
+						return fmt.Errorf("failed to save config: %w", err)
+					}
+					successMsg("Linked ticket to project")
+				}
+			}
 		}
-		successMsg("Updated configuration")
+	} else {
+		// Create new ticket metadata
+		ticket := config.Ticket{
+			TicketID:       ticketID,
+			Title:          ticketTitle,
+			Status:         "active",
+			CreatedAt:      time.Now(),
+			LastModified:   time.Now(),
+			LinkedProjects: linkedProjects,
+			Tags:           tags,
+			Notes:          ticketNotes,
+		}
+
+		// Add to config
+		if !dryRun {
+			cfg.Tickets.Active = append(cfg.Tickets.Active, ticket)
+			if err := cfgMgr.Save(cfg); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			successMsg("Updated configuration")
+		}
 	}
 
 	// Create symlink in current directory
@@ -308,19 +393,23 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 	if !dryRun {
 		fmt.Println()
-		successMsg(fmt.Sprintf("Successfully created ticket: %s", ticketID))
-		if ticketTitle != "" {
-			infoMsg(fmt.Sprintf("Title: %s", ticketTitle))
+		if linkToExisting {
+			successMsg(fmt.Sprintf("Successfully linked to existing ticket: %s", ticketID))
+		} else {
+			successMsg(fmt.Sprintf("Successfully created ticket: %s", ticketID))
+			if ticketTitle != "" {
+				infoMsg(fmt.Sprintf("Title: %s", ticketTitle))
+			}
 		}
 		infoMsg(fmt.Sprintf("Location: %s", ticketDir))
 		infoMsg(fmt.Sprintf("Symlink: %s", symlinkPath))
-		if len(ticket.LinkedProjects) > 0 {
-			infoMsg(fmt.Sprintf("Auto-linked to project: %s", ticket.LinkedProjects[0].ContextName))
+		if projectName != "" {
+			infoMsg(fmt.Sprintf("Linked to project: %s", projectName))
 		}
 		fmt.Println()
 		infoMsg("Next steps:")
 		infoMsg(fmt.Sprintf("  1. Edit ticket context: vim %s", symlinkName))
-		if len(ticket.LinkedProjects) == 0 {
+		if projectName == "" {
 			infoMsg(fmt.Sprintf("  2. Link to a project: cctx ticket link %s <project>", ticketID))
 		} else {
 			infoMsg(fmt.Sprintf("  2. (Optional) Link to other projects: cctx -t %s ticket link <project>", ticketID))
