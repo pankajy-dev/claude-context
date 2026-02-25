@@ -152,24 +152,55 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Println()
 
-			// Ask user what to do
-			if !dryRun {
-				linkToExisting = common.Confirm("Link existing ticket to current project?", true)
-				fmt.Println()
-			}
-
-			if linkToExisting {
-				// User wants to link to existing ticket - skip creation
-				infoMsg(fmt.Sprintf("Using existing ticket: %s", ticketID))
+			// Ask user what to do (unless in dry-run mode)
+			if dryRun {
+				warningMsg("In dry-run mode, would prompt user for action")
 			} else {
-				// User wants to create new ticket with suffix
-				originalID := ticketID
-				suffix := 1
-				for cfg.GetTicket(ticketID, true) != nil {
-					ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
-					suffix++
+				// Prepare option for project-scoped ticket
+				projectScopedID := ""
+				if currentProject != "" {
+					projectScopedID = fmt.Sprintf("%s-%s", currentProject, ticketID)
 				}
-				infoMsg(fmt.Sprintf("Creating new ticket: %s", ticketID))
+
+				// Show options
+				fmt.Println("Choose an option:")
+				fmt.Println("  1. Link to existing ticket (share across projects)")
+				if projectScopedID != "" && cfg.GetTicket(projectScopedID, true) == nil {
+					fmt.Printf("  2. Create project-scoped ticket: %s\n", projectScopedID)
+				}
+				fmt.Println("  3. Create with auto-incremented suffix (e.g., main-1)")
+				fmt.Println("  4. Cancel")
+				fmt.Print("\nEnter choice [1-4]: ")
+
+				var choice string
+				fmt.Scanln(&choice)
+				fmt.Println()
+
+				switch choice {
+				case "1":
+					linkToExisting = true
+					infoMsg(fmt.Sprintf("Linking to existing ticket: %s", ticketID))
+				case "2":
+					if projectScopedID != "" && cfg.GetTicket(projectScopedID, true) == nil {
+						ticketID = projectScopedID
+						infoMsg(fmt.Sprintf("Creating project-scoped ticket: %s", ticketID))
+					} else {
+						return fmt.Errorf("invalid choice or project-scoped ticket already exists")
+					}
+				case "3":
+					originalID := ticketID
+					suffix := 1
+					for cfg.GetTicket(ticketID, true) != nil {
+						ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
+						suffix++
+					}
+					infoMsg(fmt.Sprintf("Creating ticket with suffix: %s", ticketID))
+				case "4", "":
+					infoMsg("Operation cancelled")
+					return nil
+				default:
+					return fmt.Errorf("invalid choice: %s", choice)
+				}
 			}
 		}
 	} else {
