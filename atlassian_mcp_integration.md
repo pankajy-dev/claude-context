@@ -2,7 +2,6 @@
 
 ## References
 
-- [MCP Server Documentation](https://code.claude.com/docs/en/mcp)
 - [Atlassian Remote MCP Server Guide](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/)
 - [Claude MCP Servers](https://code.claude.com/docs/en/mcpClaude)
 
@@ -10,14 +9,11 @@
 
 ### 1. Add MCP Server
 
-**Manual Configuration** (global command doesn't work, add manually):
-
-1. Open root settings file: `~/.claude/settings.json`
-**Project-level** (alternative, adds to current project `.claude.json`):
+1. Run the command below in a terminal.
 ```bash
 claude mcp add --transport http atlassian https://mcp.atlassian.com/v1/mcp
 ```
-2. Add the following block to the root level, generated using above cmd:
+It will add an entry in `~/.claude.json`
 
 ```json
 "mcpServers": {
@@ -27,6 +23,10 @@ claude mcp add --transport http atlassian https://mcp.atlassian.com/v1/mcp
   }
 }
 ```
+
+2. Above will be added to the project's scope. To keep this for all the projects, move the block to the root.
+
+
 ### 2. Verify Installation
 
 ```bash
@@ -40,7 +40,7 @@ Or inside Claude:
 
 ### 3. Authenticate
 
-- Command will prompt for authentication
+- Above command will prompt for authentication
 - Approve access when requested
 
 ### 4. Test Integration
