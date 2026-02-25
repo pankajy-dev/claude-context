@@ -11,6 +11,7 @@ import (
 	"github.com/pankaj/claude-context/internal/clauderc"
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
+	"github.com/pankaj/claude-context/internal/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -242,34 +243,24 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			successMsg(fmt.Sprintf("Created ticket directory"))
 
 			// Create ticket.md from template
-			content := fmt.Sprintf(`# Ticket: %s
+			ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
+			if err != nil {
+				return fmt.Errorf("failed to load ticket template: %w", err)
+			}
 
-## Jira Summary, description, and acceptance criteria etc.
+			// Prepend ticket header
+			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + string(ticketContent)
 
-## Notes
-
-## For all the interaction with the claude, write the summary of interaction in [SESSIONS.md](SESSIONS.md) - This is a symlink to the SESSIONS.md file.
-
-`, ticketID)
-			if err := os.WriteFile(ticketFile, []byte(content), 0644); err != nil {
+			if err := os.WriteFile(ticketFile, []byte(fullContent), 0644); err != nil {
 				return fmt.Errorf("failed to create ticket file: %w", err)
 			}
 			successMsg("Created ticket.md")
 
 			// Create SESSIONS.md from template
 			sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-			sessionsTemplate := filepath.Join(dataDir, "templates", "sessions.md")
-
-			// Read template if it exists, otherwise use default content
-			var sessionsContent []byte
-			if common.FileExists(sessionsTemplate) {
-				sessionsContent, err = os.ReadFile(sessionsTemplate)
-				if err != nil {
-					warningMsg(fmt.Sprintf("Failed to read sessions template: %v", err))
-					sessionsContent = []byte(getDefaultSessionsContent())
-				}
-			} else {
-				sessionsContent = []byte(getDefaultSessionsContent())
+			sessionsContent, _, err := templates.GetTemplate("sessions", dataDir)
+			if err != nil {
+				return fmt.Errorf("failed to load sessions template: %w", err)
 			}
 
 			if err := os.WriteFile(sessionsFile, sessionsContent, 0644); err != nil {
@@ -1895,57 +1886,3 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// getDefaultSessionsContent returns the default content for SESSIONS.md
-func getDefaultSessionsContent() string {
-	return `# Development Sessions
-
-This file tracks interactions with Claude Code during ticket development.
-
----
-
-## Session Template (copy for new sessions)
-
-` + "```markdown" + `
-## Session YYYY-MM-DD: [Brief Title]
-
-### Summary
-[One sentence summary]
-
-### What Was Done
--
-
-### Key Decisions
-- **Decision**:
-  - **Rationale**:
-
-### Issues Resolved
--
-
-### Files Changed
--
-
-### Commands Used
-` + "```bash" + `
-
-` + "```" + `
-
-### Notes for Next Session
-- [ ]
-` + "```" + `
-
----
-
-## Usage Instructions
-
-1. Copy the template above for each new session
-2. Fill in the date and title
-3. Document what was accomplished
-4. Note key decisions and rationale
-5. List issues that were resolved
-6. Track files that were changed
-7. Include important commands used
-8. Add any notes for the next session
-
----
-`
-}
