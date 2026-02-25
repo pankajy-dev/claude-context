@@ -248,8 +248,11 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to load ticket template: %w", err)
 			}
 
+			// Replace {{TICKET_ID}} placeholder with actual ticket ID
+			content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
+
 			// Prepend ticket header
-			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + string(ticketContent)
+			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
 
 			if err := os.WriteFile(ticketFile, []byte(fullContent), 0644); err != nil {
 				return fmt.Errorf("failed to create ticket file: %w", err)

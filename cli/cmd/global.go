@@ -140,6 +140,21 @@ var globalTemplatesShowCmd = &cobra.Command{
 	RunE:  runGlobalTemplatesShow,
 }
 
+var globalTemplatesCopyCmd = &cobra.Command{
+	Use:   "copy <template-name>",
+	Short: "Copy template to user directory for customization",
+	Long: `Copy an embedded template to ~/.cctx/templates/ so you can customize it.
+
+The copied template will take precedence over the embedded version.
+
+Example:
+  cctx global templates copy ticket
+  # Copies to ~/.cctx/templates/ticket.md
+  # Edit it: vim ~/.cctx/templates/ticket.md`,
+	Args: cobra.ExactArgs(1),
+	RunE: runGlobalTemplatesCopy,
+}
+
 func init() {
 	rootCmd.AddCommand(globalCmd)
 
@@ -176,6 +191,8 @@ func init() {
 	globalCmd.AddCommand(globalTemplatesCmd)
 	globalTemplatesCmd.AddCommand(globalTemplatesListCmd)
 	globalTemplatesCmd.AddCommand(globalTemplatesShowCmd)
+	globalTemplatesCmd.AddCommand(globalTemplatesCopyCmd)
+	globalTemplatesCopyCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Overwrite existing template")
 }
 
 func runGlobalInit(cmd *cobra.Command, args []string) error {
@@ -896,6 +913,7 @@ func runGlobalTemplatesList(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\nTotal: %d templates\n", len(tmplList))
 	fmt.Printf("\nView template content: cctx global templates show <name>\n")
+	fmt.Printf("Copy to customize: cctx global templates copy <name>\n")
 	fmt.Printf("\nTemplates are loaded from:\n")
 	fmt.Printf("  1. User overrides: %s/templates/ (if exists)\n", dataDir)
 	fmt.Printf("  2. Embedded defaults: built into binary (source of truth)\n")
@@ -931,8 +949,62 @@ func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
 
 	if source == "embedded" {
 		fmt.Println()
-		infoMsg(fmt.Sprintf("To customize this template, copy it to: %s/templates/%s.md", dataDir, templateName))
+		infoMsg(fmt.Sprintf("To customize this template, run: cctx global templates copy %s", templateName))
 	}
+
+	return nil
+}
+
+func runGlobalTemplatesCopy(cmd *cobra.Command, args []string) error {
+	templateName := args[0]
+
+	// Normalize template name (remove .md if provided)
+	templateName = strings.TrimSuffix(templateName, ".md")
+
+	dataDir := GetDataDirOrExit()
+
+	// Get the embedded template (we want to copy the embedded version)
+	content, source, err := templates.GetTemplate(templateName, dataDir)
+	if err != nil {
+		return fmt.Errorf("%w\nAvailable templates: use 'cctx global templates list'", err)
+	}
+
+	// Check if user template already exists
+	userTemplatesDir := filepath.Join(dataDir, "templates")
+	userTemplatePath := filepath.Join(userTemplatesDir, templateName+".md")
+
+	if common.FileExists(userTemplatePath) && !ticketForce {
+		return fmt.Errorf("template already exists at %s\nUse --force to overwrite", userTemplatePath)
+	}
+
+	if dryRun {
+		dryRunMsg(fmt.Sprintf("Would create directory: %s", userTemplatesDir))
+		dryRunMsg(fmt.Sprintf("Would copy template to: %s", userTemplatePath))
+		return nil
+	}
+
+	// Create templates directory if it doesn't exist
+	if err := common.EnsureDir(userTemplatesDir); err != nil {
+		return fmt.Errorf("failed to create templates directory: %w", err)
+	}
+
+	// Write template to user directory
+	if err := os.WriteFile(userTemplatePath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write template: %w", err)
+	}
+
+	fmt.Println()
+	successMsg(fmt.Sprintf("Copied %s template to: %s", templateName, userTemplatePath))
+
+	if source == "user" {
+		infoMsg("Note: Template was already a user override, copied existing customization")
+	} else {
+		infoMsg("You can now edit this template to customize it")
+		infoMsg(fmt.Sprintf("Edit: vim %s", userTemplatePath))
+	}
+	fmt.Println()
+	infoMsg("Your customized template will be used for all new tickets/contexts")
+	infoMsg(fmt.Sprintf("To revert to embedded template, delete: %s", userTemplatePath))
 
 	return nil
 }

@@ -94,9 +94,13 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		for _, ticket := range cfg.Tickets.Active {
 			for _, linkedProj := range ticket.LinkedProjects {
 				if linkedProj.ContextName == project.ContextName {
-					// Ticket symlink format: ticket-TICKET-ID.md
-					ticketSymlink := fmt.Sprintf("ticket-%s.md", ticket.TicketID)
+					// Ticket symlink format: TICKET-ID.md (e.g., CBP-123.md)
+					ticketSymlink := fmt.Sprintf("%s.md", ticket.TicketID)
 					expectedSymlinks[ticketSymlink] = true
+
+					// SESSIONS symlinks (may have different names)
+					// We'll be lenient and allow any SESSIONS*.md files
+					// These are checked separately below
 					break
 				}
 			}
@@ -138,19 +142,61 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 				// Check if it looks like a cctx-managed symlink
 				isCctxManaged := false
 
-				// Check if it's a ticket symlink (ticket-*.md)
-				if strings.HasPrefix(entry.Name(), "ticket-") && strings.HasSuffix(entry.Name(), ".md") {
-					isCctxManaged = true
+				// Get symlink target
+				target, err := common.SymlinkTarget(fullPath)
+
+				// Check if it's a SESSIONS*.md symlink (pointing to _tickets/)
+				if strings.HasPrefix(entry.Name(), "SESSIONS") && strings.HasSuffix(entry.Name(), ".md") {
+					// Check if it points to a valid active ticket
+					if err == nil && strings.Contains(target, "/_tickets/") {
+						// Extract ticket ID from target path
+						// Format: ~/.cctx/contexts/_tickets/TICKET-ID/SESSIONS.md
+						parts := strings.Split(target, "/_tickets/")
+						if len(parts) == 2 {
+							ticketPath := strings.Split(parts[1], "/")[0]
+							// Check if this ticket is still active and linked to this project
+							validTicket := false
+							for _, ticket := range cfg.Tickets.Active {
+								if ticket.TicketID == ticketPath {
+									for _, lp := range ticket.LinkedProjects {
+										if lp.ContextName == project.ContextName {
+											validTicket = true
+											break
+										}
+									}
+								}
+								if validTicket {
+									break
+								}
+							}
+
+							if !validTicket {
+								// Orphaned SESSIONS symlink
+								isCctxManaged = true
+							}
+						}
+					} else {
+						// Broken SESSIONS symlink
+						isCctxManaged = true
+					}
+				}
+
+				// Check if it's a ticket symlink (matches pattern like CBP-123.md, BEE-456.md)
+				// Ticket IDs usually match pattern: UPPERCASE-DIGITS.md
+				if strings.HasSuffix(entry.Name(), ".md") && !strings.HasPrefix(entry.Name(), "SESSIONS") {
+					// Check if target points to _tickets directory
+					if err == nil && strings.Contains(target, "/_tickets/") {
+						isCctxManaged = true
+					}
 				}
 
 				// Check if it's a global context symlink (points to _global/)
-				target, err := common.SymlinkTarget(fullPath)
 				if err == nil && strings.Contains(target, "/_global/") {
 					isCctxManaged = true
 				}
 
-				// Check if target points to data directory
-				if err == nil && strings.HasPrefix(target, dataDir) {
+				// Check if target points to data directory contexts
+				if err == nil && strings.HasPrefix(target, filepath.Join(dataDir, "contexts")) {
 					isCctxManaged = true
 				}
 
