@@ -252,7 +252,7 @@ If input contains a match:
 
 ## Session Logging Policy (Conditional)
 
-If the current project contains a file named `sessions*.md` in the repository root:
+If the current project contains a file named `SESSIONS*.md` in the repository root:
 
 1. Append after completing each distinct task or ticket work.
 2. Keep entry <= 30 lines.
@@ -288,7 +288,7 @@ For any ticket matching pattern `(CBP|BEE)-\d+`:
 - **Session Logging**: Tracks work sessions in SESSIONS.md files for documentation
 - **Ticket Context Policy**: Ensures Claude always reads/updates ticket context files before starting work
 
-**Jira MCP Server Integration**: See [Atlassian MCP Server Documentation](https://github.com/anthropics/anthropic-tools/tree/main/mcp/atlassian) for setting up Jira integration with Claude Code.
+**Jira MCP Server Integration**: See [Atlassian MCP Server Integration steps](./atlassian_mcp_integration.md) for setting up Jira integration with Claude Code.
 
 ### "Data directory not initialized"
 

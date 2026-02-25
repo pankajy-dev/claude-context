@@ -11,6 +11,15 @@ Track Claude Code interactions. Keep entries ≤30 lines. Append only.
 **Decisions/Findings:**
 - Key decision or finding with rationale
 
-**Cost:** $X.XX
+**Cost:**
+```
+Total cost:            $X.XX
+Total duration (API):  Xm XXs
+Total duration (wall): Xh XXm XXs
+Total code changes:    XX lines added, XX lines removed
+Usage by model:
+    claude-haiku-4-5:  X.Xk input, XXX output, X cache read, X cache write ($X.XX)
+   claude-sonnet-4-5:  X.Xk input, X.Xk output, X.Xm cache read, XX.Xk cache write ($X.XX)
+```
 
 ---

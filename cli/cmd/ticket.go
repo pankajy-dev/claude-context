@@ -1731,28 +1731,54 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 
 	// Find ticket in active or archived
 	ticket := cfg.GetTicket(ticketID, true)
-	if ticket == nil {
-		return fmt.Errorf("ticket not found: %s", ticketID)
-	}
 
 	// Determine ticket directory
 	var ticketDir string
-	if ticket.ArchivedPath != "" {
-		ticketDir = filepath.Join(dataDir, ticket.ArchivedPath)
+	if ticket != nil {
+		if ticket.ArchivedPath != "" {
+			ticketDir = filepath.Join(dataDir, ticket.ArchivedPath)
+		} else {
+			ticketDir = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+		}
 	} else {
 		ticketDir = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
 	}
 
-	fmt.Println()
-	warningMsg(fmt.Sprintf("About to permanently delete ticket: %s", ticketID))
-	if ticket.Title != "" {
-		infoMsg(fmt.Sprintf("Title: %s", ticket.Title))
+	// Check if there are any orphaned files to clean up
+	hasOrphanedFiles := false
+	if cwd, err := os.Getwd(); err == nil {
+		symlinkPath := filepath.Join(cwd, ticketID+".md")
+		sessionsSymlinkPath := filepath.Join(cwd, "SESSIONS.md")
+		if common.FileExists(symlinkPath) || common.FileExists(sessionsSymlinkPath) {
+			hasOrphanedFiles = true
+		}
 	}
-	infoMsg(fmt.Sprintf("Status: %s", ticket.Status))
-	infoMsg(fmt.Sprintf("Linked projects: %d", len(ticket.LinkedProjects)))
+	if !hasOrphanedFiles && common.DirExists(ticketDir) {
+		hasOrphanedFiles = true
+	}
+
+	// If ticket not found in config and no orphaned files, exit
+	if ticket == nil && !hasOrphanedFiles {
+		return fmt.Errorf("ticket not found: %s", ticketID)
+	}
+
+	fmt.Println()
+	if ticket != nil {
+		warningMsg(fmt.Sprintf("About to permanently delete ticket: %s", ticketID))
+		if ticket.Title != "" {
+			infoMsg(fmt.Sprintf("Title: %s", ticket.Title))
+		}
+		infoMsg(fmt.Sprintf("Status: %s", ticket.Status))
+		infoMsg(fmt.Sprintf("Linked projects: %d", len(ticket.LinkedProjects)))
+	} else {
+		warningMsg(fmt.Sprintf("Cleaning up orphaned files for: %s", ticketID))
+		warningMsg("(Ticket not found in config)")
+	}
 	fmt.Println()
 	warningMsg("This will remove:")
-	warningMsg("  - Ticket from config.json")
+	if ticket != nil {
+		warningMsg("  - Ticket from config.json")
+	}
 	warningMsg("  - Ticket directory and all files")
 	warningMsg("  - Symlinks from all linked projects")
 	warningMsg("  - .clauderc entries in projects")
@@ -1785,19 +1811,25 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			if ticketSymlinkExists {
-				dryRunMsg(fmt.Sprintf("Would remove ticket symlink from %s", project.ContextName))
+				dryRunMsg(fmt.Sprintf("Would remove ticket file from %s", project.ContextName))
 				dryRunMsg("Would remove from .clauderc")
 			}
 			if sessionsSymlinkExists {
-				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md symlink from %s", project.ContextName))
+				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md file from %s", project.ContextName))
 			}
 		} else {
-			// Remove ticket symlink
+			// Remove ticket file (symlink or concrete)
 			if ticketSymlinkExists {
-				if err := common.RemoveSymlink(symlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove ticket symlink from %s: %v", project.ContextName, err))
+				var err error
+				if common.IsSymlink(symlinkPath) {
+					err = common.RemoveSymlink(symlinkPath)
 				} else {
-					successMsg(fmt.Sprintf("Removed ticket symlink from %s", project.ContextName))
+					err = os.Remove(symlinkPath)
+				}
+				if err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove ticket file from %s: %v", project.ContextName, err))
+				} else {
+					successMsg(fmt.Sprintf("Removed ticket file from %s", project.ContextName))
 				}
 
 				// Update .clauderc
@@ -1807,30 +1839,42 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			// Remove SESSIONS.md symlink
+			// Remove SESSIONS.md file (symlink or concrete)
 			if sessionsSymlinkExists {
-				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md symlink from %s: %v", project.ContextName, err))
+				var err error
+				if common.IsSymlink(sessionsSymlinkPath) {
+					err = common.RemoveSymlink(sessionsSymlinkPath)
 				} else {
-					successMsg(fmt.Sprintf("Removed SESSIONS.md symlink from %s", project.ContextName))
+					err = os.Remove(sessionsSymlinkPath)
+				}
+				if err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md file from %s: %v", project.ContextName, err))
+				} else {
+					successMsg(fmt.Sprintf("Removed SESSIONS.md file from %s", project.ContextName))
 				}
 			}
 		}
 	}
 
-	// Also check current directory for orphaned symlinks (from unmanaged directories)
+	// Also check current directory for orphaned files (from unmanaged directories)
 	if cwd, err := os.Getwd(); err == nil {
 		symlinkPath := filepath.Join(cwd, ticketID+".md")
 		sessionsSymlinkPath := filepath.Join(cwd, "SESSIONS.md")
 
 		if common.FileExists(symlinkPath) {
 			if dryRun {
-				dryRunMsg(fmt.Sprintf("Would remove symlink from current directory: %s", symlinkPath))
+				dryRunMsg(fmt.Sprintf("Would remove file from current directory: %s", symlinkPath))
 			} else {
-				if err := common.RemoveSymlink(symlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove symlink from current directory: %v", err))
+				var err error
+				if common.IsSymlink(symlinkPath) {
+					err = common.RemoveSymlink(symlinkPath)
 				} else {
-					successMsg("Removed symlink from current directory")
+					err = os.Remove(symlinkPath)
+				}
+				if err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove file from current directory: %v", err))
+				} else {
+					successMsg("Removed file from current directory")
 				}
 
 				// Update .clauderc in current directory
@@ -1841,15 +1885,21 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Also check for SESSIONS.md symlink
+		// Also check for SESSIONS.md file
 		if common.FileExists(sessionsSymlinkPath) {
 			if dryRun {
-				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md symlink from current directory"))
+				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md file from current directory"))
 			} else {
-				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md symlink: %v", err))
+				var err error
+				if common.IsSymlink(sessionsSymlinkPath) {
+					err = common.RemoveSymlink(sessionsSymlinkPath)
 				} else {
-					successMsg("Removed SESSIONS.md symlink from current directory")
+					err = os.Remove(sessionsSymlinkPath)
+				}
+				if err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md file: %v", err))
+				} else {
+					successMsg("Removed SESSIONS.md file from current directory")
 				}
 			}
 		}

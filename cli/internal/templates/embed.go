@@ -26,16 +26,25 @@ func GetTemplateFS() fs.FS {
 	return embeddedTemplates
 }
 
-// GetTemplate reads a template by name, checking user dir first, then embedded
-// Returns template content and source ("user" or "embedded")
+// GetTemplate reads a template by name, checking user dir first, then source dir (dev), then embedded
+// Returns template content and source ("user", "dev", or "embedded")
 func GetTemplate(name string, dataDir string) ([]byte, string, error) {
-	// Check user templates first (~/.cctx/templates/)
+	// 1. Check user templates first (~/.cctx/templates/)
 	userTemplatePath := filepath.Join(dataDir, "templates", name+".md")
 	if content, err := os.ReadFile(userTemplatePath); err == nil {
 		return content, "user", nil
 	}
 
-	// Fall back to embedded template
+	// 2. Check source directory (for development) - cli/internal/templates/
+	// This allows editing templates without rebuilding during development
+	if cwd, err := os.Getwd(); err == nil {
+		devTemplatePath := filepath.Join(cwd, "cli", "internal", "templates", name+".md")
+		if content, err := os.ReadFile(devTemplatePath); err == nil {
+			return content, "dev", nil
+		}
+	}
+
+	// 3. Fall back to embedded template (production)
 	content, err := embeddedTemplates.ReadFile(name + ".md")
 	if err != nil {
 		return nil, "", fmt.Errorf("template not found: %s", name)
