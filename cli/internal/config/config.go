@@ -10,10 +10,11 @@ import (
 
 // Config represents the main configuration structure
 type Config struct {
-	ManagedProjects []Project       `json:"managed_projects"`
-	GlobalContexts  []GlobalContext `json:"global_contexts"`
-	Tickets         TicketSection   `json:"tickets"`
-	Settings        Settings        `json:"settings"`
+	ManagedProjects       []Project        `json:"managed_projects"`
+	GlobalContexts        []GlobalContext  `json:"global_contexts"`
+	Tickets               TicketSection    `json:"tickets"`
+	Settings              Settings         `json:"settings"`
+	CurrentWorkingTickets []CurrentTicket  `json:"current_working_tickets,omitempty"` // Support multiple concurrent tickets
 }
 
 // Project represents a managed project
@@ -65,6 +66,13 @@ type Ticket struct {
 type LinkedProject struct {
 	ContextName string `json:"context_name"`
 	ProjectPath string `json:"project_path"`
+}
+
+// CurrentTicket tracks the currently active ticket across all repos
+type CurrentTicket struct {
+	TicketID    string    `json:"ticket_id"`
+	ProjectName string    `json:"project_name"`
+	StartedAt   time.Time `json:"started_at"`
 }
 
 // TicketSettings contains ticket-specific settings
@@ -194,4 +202,42 @@ func (m *Manager) GetRepoRoot() string {
 // GetContextsPath returns the contexts directory path
 func (m *Manager) GetContextsPath() string {
 	return m.contextsPath
+}
+
+// AddCurrentWorkingTicket adds a ticket to the current working list
+func (c *Config) AddCurrentWorkingTicket(ticketID, projectName string) {
+	// Check if already in list
+	for _, cwt := range c.CurrentWorkingTickets {
+		if cwt.TicketID == ticketID {
+			return // Already tracking this ticket
+		}
+	}
+
+	// Add to list
+	c.CurrentWorkingTickets = append(c.CurrentWorkingTickets, CurrentTicket{
+		TicketID:    ticketID,
+		ProjectName: projectName,
+		StartedAt:   time.Now(),
+	})
+}
+
+// RemoveCurrentWorkingTicket removes a ticket from the current working list
+func (c *Config) RemoveCurrentWorkingTicket(ticketID string) {
+	newList := []CurrentTicket{}
+	for _, cwt := range c.CurrentWorkingTickets {
+		if cwt.TicketID != ticketID {
+			newList = append(newList, cwt)
+		}
+	}
+	c.CurrentWorkingTickets = newList
+}
+
+// IsCurrentlyWorking checks if a ticket is in the current working list
+func (c *Config) IsCurrentlyWorking(ticketID string) bool {
+	for _, cwt := range c.CurrentWorkingTickets {
+		if cwt.TicketID == ticketID {
+			return true
+		}
+	}
+	return false
 }

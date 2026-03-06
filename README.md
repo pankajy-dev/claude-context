@@ -32,6 +32,11 @@ cd claude-context
 # Build and install to ~/bin
 make install
 
+# Clear your shell's command cache (important after updates!)
+hash -r         # For bash/zsh
+# OR
+rehash          # For zsh (alternative)
+
 # Add ~/bin to PATH if not already (add to ~/.zshrc or ~/.bashrc)
 export PATH="$HOME/bin:$PATH"
 
@@ -245,10 +250,14 @@ Regex pattern:
 If input contains a match:
 1. Treat it as a Jira issue key.
 2. Ask for the confirmation before fetching the Jira ticket details.
-3. Invoke Atlassian MCP.
-4. Retrieve: summary, description, status, acceptance criteria.
-5. Use retrieved data as authoritative context.
-6. Do not infer ticket details without MCP retrieval.
+3. Check if Atlassian MCP server is available:
+    - Search for mcp__atlassian tools using ToolSearch
+    - If NOT available, ask user to authenticate: "The Atlassian MCP server is not currently connected. Please run `/mcp` to authenticate."
+    - Wait for user to complete authentication before proceeding
+4. Invoke Atlassian MCP.
+5. Retrieve: summary, description, status, acceptance criteria.
+6. Use retrieved data as authoritative context.
+7. Do not infer ticket details without MCP retrieval.
 
 ## Session Logging Policy (Conditional)
 
@@ -295,6 +304,17 @@ For any ticket matching pattern `(CBP|BEE)-\d+`:
 ```bash
 cctx init
 ```
+
+### Old Binary Cached After Update
+
+After `make install`, your shell may cache the old binary location. Clear the cache:
+
+```bash
+hash -r         # For bash/zsh
+rehash          # For zsh (alternative)
+```
+
+**Symptoms**: Commands show old behavior even after successful install.
 
 ### Broken Symlinks
 

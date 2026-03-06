@@ -34,6 +34,10 @@ install: build
 	@chmod +x $(INSTALL_DIR)/$(BINARY_NAME)
 	@echo "✓ Installed to $(INSTALL_DIR)/$(BINARY_NAME)"
 	@echo ""
+	@echo "⚠️  Clear your shell's command cache to use the updated binary:"
+	@echo "  hash -r         # For bash/zsh"
+	@echo "  rehash          # For zsh (alternative)"
+	@echo ""
 	@echo "Make sure $(INSTALL_DIR) is in your PATH:"
 	@echo "  export PATH=\"\$$HOME/bin:\$$PATH\""
 	@echo ""
@@ -46,6 +50,10 @@ install-global: build
 	@sudo cp $(BINARY_NAME) /usr/local/bin/$(BINARY_NAME)
 	@sudo chmod +x /usr/local/bin/$(BINARY_NAME)
 	@echo "✓ Installed to /usr/local/bin/$(BINARY_NAME)"
+	@echo ""
+	@echo "⚠️  Clear your shell's command cache to use the updated binary:"
+	@echo "  hash -r         # For bash/zsh"
+	@echo "  rehash          # For zsh (alternative)"
 
 ## uninstall: Remove the binary from ~/bin
 uninstall:

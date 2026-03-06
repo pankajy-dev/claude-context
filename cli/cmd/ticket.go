@@ -97,6 +97,9 @@ func init() {
 	// ticket archive-all
 	ticketCmd.AddCommand(ticketArchiveAllCmd)
 	ticketArchiveAllCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
+
+	// ticket working
+	ticketCmd.AddCommand(ticketWorkingCmd)
 }
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
@@ -115,6 +118,98 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 	// Try to detect current project for context
 	currentProject, _ := GetProjectContext(dataDir)
+
+	// Check for existing working tickets (cross-repo support)
+	if len(cfg.CurrentWorkingTickets) > 0 {
+		// Determine what ticket we're about to create/work on
+		var tentativeTicketID string
+		if len(args) > 0 {
+			tentativeTicketID = args[0]
+		} else {
+			// Try to detect from branch
+			branch := common.GetGitBranch()
+			if branch != "" && branch != "main" && branch != "master" {
+				tentativeTicketID = branch
+			}
+		}
+
+		// Check if this ticket is already in the working list
+		alreadyWorking := cfg.IsCurrentlyWorking(tentativeTicketID)
+
+		// If starting a NEW ticket, show existing working tickets
+		if tentativeTicketID != "" && !alreadyWorking {
+			if !dryRun {
+				fmt.Println()
+				warningMsg(fmt.Sprintf("You have %d active ticket(s):", len(cfg.CurrentWorkingTickets)))
+				fmt.Println()
+				for _, cwt := range cfg.CurrentWorkingTickets {
+					ticket := cfg.GetTicket(cwt.TicketID, false)
+					status := "unknown"
+					if ticket != nil {
+						status = ticket.Status
+					}
+					fmt.Printf("  - %s", cwt.TicketID)
+					if cwt.ProjectName != "" {
+						fmt.Printf(" (%s)", cwt.ProjectName)
+					}
+					fmt.Printf(" [%s]", status)
+					fmt.Println()
+				}
+				fmt.Println()
+				fmt.Println("Do you want to complete any tickets before starting " + tentativeTicketID + "?")
+				fmt.Println("  1. Yes, mark one as completed")
+				fmt.Println("  2. No, continue with multiple active tickets")
+				fmt.Println("  3. Cancel")
+				fmt.Print("\nEnter choice [1-3]: ")
+
+				var choice string
+				fmt.Scanln(&choice)
+				fmt.Println()
+
+				switch choice {
+				case "1":
+					// Prompt for which ticket to complete
+					fmt.Print("Enter ticket ID to complete: ")
+					var ticketToComplete string
+					fmt.Scanln(&ticketToComplete)
+					fmt.Println()
+
+					// Mark the ticket as completed
+					oldTicket := cfg.GetTicket(ticketToComplete, false)
+					if oldTicket != nil && oldTicket.Status != "completed" {
+						completedAt := time.Now()
+						oldTicket.Status = "completed"
+						oldTicket.CompletedAt = &completedAt
+						oldTicket.LastModified = time.Now()
+
+						// Remove from working list
+						cfg.RemoveCurrentWorkingTicket(ticketToComplete)
+
+						// Save the config
+						if err := cfgMgr.Save(cfg); err != nil {
+							return fmt.Errorf("failed to save config: %w", err)
+						}
+						successMsg(fmt.Sprintf("Marked ticket %s as completed", ticketToComplete))
+						fmt.Println()
+					} else if oldTicket == nil {
+						warningMsg(fmt.Sprintf("Ticket %s not found", ticketToComplete))
+					} else {
+						warningMsg(fmt.Sprintf("Ticket %s already completed", ticketToComplete))
+					}
+				case "2":
+					infoMsg("Continuing with multiple active tickets")
+					fmt.Println()
+				case "3", "":
+					infoMsg("Operation cancelled")
+					return nil
+				default:
+					return fmt.Errorf("invalid choice: %s", choice)
+				}
+			} else {
+				warningMsg(fmt.Sprintf("Would prompt about %d working ticket(s)", len(cfg.CurrentWorkingTickets)))
+			}
+		}
+	}
 
 	// Determine ticket ID: from args or auto-detect
 	if len(args) > 0 {
@@ -306,26 +401,17 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// V2 Architecture: Create concrete files in primary project, symlinks elsewhere
-	// Determine where concrete files should live
+	// V2 Architecture: ALWAYS create concrete files in current directory
+	// Get current directory first
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Concrete files always go in current directory (v2 behavior)
 	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	var concreteTicketFile, concreteSessionsFile string
-
-	currentTicket := cfg.GetTicket(ticketID, false)
-	if currentTicket != nil && currentTicket.PrimaryContextName != "" {
-		// Primary project exists - concrete files go in project directory
-		primaryProject := cfg.GetProject(currentTicket.PrimaryContextName)
-		if primaryProject != nil {
-			concreteTicketFile = filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-			concreteSessionsFile = filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
-		}
-	}
-
-	// Fallback: if no primary project, use data dir
-	if concreteTicketFile == "" {
-		concreteTicketFile = filepath.Join(ticketDir, "ticket.md")
-		concreteSessionsFile = filepath.Join(ticketDir, "SESSIONS.md")
-	}
+	concreteTicketFile := filepath.Join(currentDir, ticketID+".md")
+	concreteSessionsFile := filepath.Join(currentDir, "SESSIONS.md")
 
 	// Create concrete files (skip if linking to existing)
 	if !linkToExisting {
@@ -388,126 +474,15 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create files/symlinks in current directory
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	symlinkName := ticketID + ".md"
-	symlinkPath := filepath.Join(currentDir, symlinkName)
-	sessionsSymlinkName := "SESSIONS.md"
-	sessionsSymlinkPath := filepath.Join(currentDir, sessionsSymlinkName)
-
-	// V2: Create symlinks in current directory based on project role
-	ticket := cfg.GetTicket(ticketID, false)
-	if projectName != "" && ticket != nil && ticket.PrimaryContextName == projectName {
-		// Primary project: concrete files are already here, skip symlink creation
-		if !dryRun {
-			infoMsg(fmt.Sprintf("Concrete files in primary project: %s, %s", symlinkName, sessionsSymlinkName))
-
-			// Update .clauderc with ticket.md only (not SESSIONS.md - that's for human reference)
-			rcMgr := clauderc.NewManager(currentDir)
-			if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
-			} else {
-				successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
-			}
-		}
-	} else if projectName != "" && ticket != nil && ticket.PrimaryContextName != projectName {
-		// Secondary project - create symlinks to primary project
-		primaryProject := cfg.GetProject(ticket.PrimaryContextName)
-		if primaryProject != nil {
-			primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-			primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
-
-			if dryRun {
-				dryRunMsg(fmt.Sprintf("Would create symlink to primary: %s", symlinkPath))
-				dryRunMsg(fmt.Sprintf("Would create symlink to primary: %s", sessionsSymlinkPath))
-			} else {
-				// Create symlinks to primary project
-				if common.FileExists(primaryTicketFile) {
-					if err := common.CreateSymlink(primaryTicketFile, symlinkPath); err != nil {
-						warningMsg(fmt.Sprintf("Failed to create secondary symlink: %v", err))
-					} else {
-						successMsg(fmt.Sprintf("Created symlink to primary: %s", symlinkName))
-					}
-				}
-				if common.FileExists(primarySessionsFile) {
-					if err := common.CreateSymlink(primarySessionsFile, sessionsSymlinkPath); err != nil {
-						warningMsg(fmt.Sprintf("Failed to create secondary sessions symlink: %v", err))
-					} else {
-						successMsg(fmt.Sprintf("Created symlink to primary: %s", sessionsSymlinkName))
-					}
-				}
-
-				// Update .clauderc
-				rcMgr := clauderc.NewManager(currentDir)
-				if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
-					warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
-				} else {
-					successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
-				}
-			}
-		}
-	} else {
-		// No project linked - create symlinks to data dir
-		ticketFile := filepath.Join(ticketDir, "ticket.md")
-		sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would create symlink: %s", symlinkPath))
-			dryRunMsg(fmt.Sprintf("Would create symlink: %s (for human reference only)", sessionsSymlinkPath))
-			dryRunMsg(fmt.Sprintf("Would add '%s' to .clauderc", symlinkName))
+	// V2: Concrete files already created in current directory
+	// Just update .clauderc (ticket.md only, not SESSIONS.md)
+	if !dryRun {
+		rcMgr := clauderc.NewManager(currentDir)
+		ticketFileName := ticketID + ".md"
+		if err := rcMgr.AddFile(ticketFileName, dryRun); err != nil {
+			warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", ticketFileName, err))
 		} else {
-			// Create ticket.md symlink
-			if common.FileExists(symlinkPath) {
-				warningMsg(fmt.Sprintf("File already exists: %s", symlinkPath))
-			} else {
-				if err := common.CreateSymlink(ticketFile, symlinkPath); err != nil {
-					return fmt.Errorf("failed to create symlink: %w", err)
-				}
-				successMsg(fmt.Sprintf("Created symlink: %s", symlinkName))
-			}
-
-			// Create SESSIONS.md symlink (with unique name if exists)
-			finalSessionsSymlinkPath := sessionsSymlinkPath
-			finalSessionsSymlinkName := sessionsSymlinkName
-			if common.FileExists(sessionsSymlinkPath) {
-				// Find unique name with suffix
-				suffix := 1
-				for {
-					finalSessionsSymlinkName = fmt.Sprintf("SESSIONS-%s.md", ticketID)
-					finalSessionsSymlinkPath = filepath.Join(currentDir, finalSessionsSymlinkName)
-					if !common.FileExists(finalSessionsSymlinkPath) {
-						break
-					}
-					suffix++
-					if suffix > 100 {
-						warningMsg("Could not find unique name for SESSIONS.md")
-						break
-					}
-				}
-			}
-
-			if common.FileExists(finalSessionsSymlinkPath) {
-				warningMsg(fmt.Sprintf("File already exists: %s", finalSessionsSymlinkPath))
-			} else {
-				if err := common.CreateSymlink(sessionsFile, finalSessionsSymlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to create SESSIONS.md symlink: %v", err))
-				} else {
-					successMsg(fmt.Sprintf("Created symlink: %s", finalSessionsSymlinkName))
-				}
-			}
-
-			// Update .clauderc with ticket.md only (not SESSIONS.md - that's for human reference)
-			rcMgr := clauderc.NewManager(currentDir)
-			if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
-			} else {
-				successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
-			}
-			// Note: SESSIONS.md is NOT added to .clauderc - it's for human reference only
+			successMsg(fmt.Sprintf("Added %s to .clauderc", ticketFileName))
 		}
 	}
 
@@ -524,17 +499,23 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 		}
 		infoMsg(fmt.Sprintf("Location: %s", ticketDir))
-		infoMsg(fmt.Sprintf("Symlink: %s", symlinkPath))
+		infoMsg(fmt.Sprintf("Ticket file: %s", concreteTicketFile))
 		if projectName != "" {
 			infoMsg(fmt.Sprintf("Linked to project: %s", projectName))
 		}
 		fmt.Println()
 		infoMsg("Next steps:")
-		infoMsg(fmt.Sprintf("  1. Edit ticket context: vim %s", symlinkName))
+		infoMsg(fmt.Sprintf("  1. Edit ticket context: vim %s.md", ticketID))
 		if projectName == "" {
 			infoMsg(fmt.Sprintf("  2. Link to a project: cctx ticket link %s <project>", ticketID))
 		} else {
 			infoMsg(fmt.Sprintf("  2. (Optional) Link to other projects: cctx -t %s ticket link <project>", ticketID))
+		}
+
+		// Add to current working tickets (cross-repo tracking)
+		cfg.AddCurrentWorkingTicket(ticketID, projectName)
+		if err := cfgMgr.Save(cfg); err != nil {
+			warningMsg(fmt.Sprintf("Failed to add to working tickets: %v", err))
 		}
 	}
 
@@ -1428,6 +1409,14 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		infoMsg(fmt.Sprintf("Branch: %s", branch))
 	}
 
+	// Remove from working tickets if present
+	if cfg.IsCurrentlyWorking(ticketID) {
+		cfg.RemoveCurrentWorkingTicket(ticketID)
+		if err := cfgMgr.Save(cfg); err != nil {
+			warningMsg(fmt.Sprintf("Failed to remove from working tickets: %v", err))
+		}
+	}
+
 	return nil
 }
 
@@ -1493,6 +1482,14 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	successMsg(fmt.Sprintf("Ticket %s marked as abandoned", ticketID))
 	infoMsg("You can archive it with: cctx ticket archive " + ticketID)
+
+	// Remove from working tickets if present
+	if cfg.IsCurrentlyWorking(ticketID) {
+		cfg.RemoveCurrentWorkingTicket(ticketID)
+		if err := cfgMgr.Save(cfg); err != nil {
+			warningMsg(fmt.Sprintf("Failed to remove from working tickets: %v", err))
+		}
+	}
 
 	return nil
 }
@@ -2233,3 +2230,117 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// ticket working subcommand
+var ticketWorkingCmd = &cobra.Command{
+	Use:   "working [remove <ticket-id>]",
+	Short: "Manage currently working tickets",
+	Long: `View and manage tickets you're currently working on across all repos.
+
+This tracks tickets you have in progress simultaneously.
+
+Usage:
+  - List working tickets: cctx ticket working
+  - Remove a ticket: cctx ticket working remove TICKET-123
+  - Clear all: cctx ticket working clear`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: runTicketWorking,
+}
+
+func runTicketWorking(cmd *cobra.Command, args []string) error {
+	// Get data directory
+	dataDir := GetDataDirOrExit()
+
+	// Load config
+	cfgMgr := config.NewManager(dataDir)
+	cfg, err := cfgMgr.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Handle subcommands
+	if len(args) > 0 {
+		switch args[0] {
+		case "remove", "rm":
+			if len(args) < 2 {
+				return fmt.Errorf("specify ticket ID to remove: cctx ticket working remove TICKET-123")
+			}
+			ticketID := args[1]
+
+			if !cfg.IsCurrentlyWorking(ticketID) {
+				return fmt.Errorf("ticket %s is not in working list", ticketID)
+			}
+
+			cfg.RemoveCurrentWorkingTicket(ticketID)
+			if err := cfgMgr.Save(cfg); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+
+			successMsg(fmt.Sprintf("Removed %s from working tickets", ticketID))
+			return nil
+
+		case "clear":
+			if len(cfg.CurrentWorkingTickets) == 0 {
+				infoMsg("No working tickets to clear")
+				return nil
+			}
+
+			count := len(cfg.CurrentWorkingTickets)
+			cfg.CurrentWorkingTickets = []config.CurrentTicket{}
+
+			if err := cfgMgr.Save(cfg); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+
+			successMsg(fmt.Sprintf("Cleared %d working ticket(s)", count))
+			return nil
+
+		default:
+			return fmt.Errorf("unknown subcommand: %s (use 'remove' or 'clear')", args[0])
+		}
+	}
+
+	// List working tickets
+	if len(cfg.CurrentWorkingTickets) == 0 {
+		infoMsg("No tickets currently being worked on")
+		fmt.Println()
+		infoMsg("Tickets are automatically added when you create them.")
+		infoMsg("Remove completed tickets with: cctx ticket working remove <ticket-id>")
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println("Currently Working Tickets:")
+	fmt.Println("=" + strings.Repeat("=", 60))
+	fmt.Println()
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "TICKET ID\tPROJECT\tSTARTED\tSTATUS\n")
+	fmt.Fprintf(w, "---------\t-------\t-------\t------\n")
+
+	for _, cwt := range cfg.CurrentWorkingTickets {
+		// Get ticket details
+		ticket := cfg.GetTicket(cwt.TicketID, false)
+		status := "unknown"
+		if ticket != nil {
+			status = ticket.Status
+		}
+
+		projectName := cwt.ProjectName
+		if projectName == "" {
+			projectName = "-"
+		}
+
+		startedTime := cwt.StartedAt.Format("2006-01-02 15:04")
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cwt.TicketID, projectName, startedTime, status)
+	}
+	w.Flush()
+
+	fmt.Println()
+	infoMsg("Commands:")
+	infoMsg("  Remove: cctx ticket working remove <ticket-id>")
+	infoMsg("  Clear all: cctx ticket working clear")
+	fmt.Println()
+
+	return nil
+}
