@@ -10,7 +10,6 @@ import (
 
 // Config represents the main configuration structure
 type Config struct {
-	SchemaVersion   int             `json:"schema_version,omitempty"` // 1=old, 2=new (default 1 for backwards compat)
 	ManagedProjects []Project       `json:"managed_projects"`
 	GlobalContexts  []GlobalContext `json:"global_contexts"`
 	Tickets         TicketSection   `json:"tickets"`
@@ -105,11 +104,6 @@ func (m *Manager) Load() (*Config, error) {
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Default to schema version 1 for backwards compatibility
-	if config.SchemaVersion == 0 {
-		config.SchemaVersion = 1
 	}
 
 	return &config, nil

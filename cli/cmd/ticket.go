@@ -228,52 +228,6 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create ticket directory and files (skip if linking to existing)
-	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	ticketFile := filepath.Join(ticketDir, "ticket.md")
-
-	if !linkToExisting {
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
-			dryRunMsg(fmt.Sprintf("Would create ticket file: %s", ticketFile))
-		} else {
-			if err := common.EnsureDir(ticketDir); err != nil {
-				return fmt.Errorf("failed to create ticket directory: %w", err)
-			}
-			successMsg(fmt.Sprintf("Created ticket directory"))
-
-			// Create ticket.md from template
-			ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
-			if err != nil {
-				return fmt.Errorf("failed to load ticket template: %w", err)
-			}
-
-			// Replace {{TICKET_ID}} placeholder with actual ticket ID
-			content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
-
-			// Prepend ticket header
-			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
-
-			if err := os.WriteFile(ticketFile, []byte(fullContent), 0644); err != nil {
-				return fmt.Errorf("failed to create ticket file: %w", err)
-			}
-			successMsg("Created ticket.md")
-
-			// Create SESSIONS.md from template
-			sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-			sessionsContent, _, err := templates.GetTemplate("sessions", dataDir)
-			if err != nil {
-				return fmt.Errorf("failed to load sessions template: %w", err)
-			}
-
-			if err := os.WriteFile(sessionsFile, sessionsContent, 0644); err != nil {
-				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
-			} else {
-				successMsg("Created SESSIONS.md")
-			}
-		}
-	}
-
 	// Parse tags
 	var tags []string
 	if ticketTags != "" {
@@ -352,6 +306,88 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// V2 Architecture: Create concrete files in primary project, symlinks elsewhere
+	// Determine where concrete files should live
+	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+	var concreteTicketFile, concreteSessionsFile string
+
+	currentTicket := cfg.GetTicket(ticketID, false)
+	if currentTicket != nil && currentTicket.PrimaryContextName != "" {
+		// Primary project exists - concrete files go in project directory
+		primaryProject := cfg.GetProject(currentTicket.PrimaryContextName)
+		if primaryProject != nil {
+			concreteTicketFile = filepath.Join(primaryProject.ProjectPath, ticketID+".md")
+			concreteSessionsFile = filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
+		}
+	}
+
+	// Fallback: if no primary project, use data dir
+	if concreteTicketFile == "" {
+		concreteTicketFile = filepath.Join(ticketDir, "ticket.md")
+		concreteSessionsFile = filepath.Join(ticketDir, "SESSIONS.md")
+	}
+
+	// Create concrete files (skip if linking to existing)
+	if !linkToExisting {
+		if dryRun {
+			dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
+			dryRunMsg(fmt.Sprintf("Would create concrete ticket file: %s", concreteTicketFile))
+			dryRunMsg(fmt.Sprintf("Would create concrete sessions file: %s", concreteSessionsFile))
+		} else {
+			// Ensure ticket directory in data dir always exists (for symlinks)
+			if err := common.EnsureDir(ticketDir); err != nil {
+				return fmt.Errorf("failed to create ticket directory: %w", err)
+			}
+
+			// Create ticket.md from template
+			ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
+			if err != nil {
+				return fmt.Errorf("failed to load ticket template: %w", err)
+			}
+
+			// Replace {{TICKET_ID}} placeholder with actual ticket ID
+			content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
+
+			// Prepend ticket header
+			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
+
+			if err := os.WriteFile(concreteTicketFile, []byte(fullContent), 0644); err != nil {
+				return fmt.Errorf("failed to create ticket file: %w", err)
+			}
+			successMsg(fmt.Sprintf("Created ticket file: %s", concreteTicketFile))
+
+			// Create SESSIONS.md from template
+			sessionsContent, _, err := templates.GetTemplate("sessions", dataDir)
+			if err != nil {
+				return fmt.Errorf("failed to load sessions template: %w", err)
+			}
+
+			if err := os.WriteFile(concreteSessionsFile, sessionsContent, 0644); err != nil {
+				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
+			} else {
+				successMsg(fmt.Sprintf("Created SESSIONS.md: %s", concreteSessionsFile))
+			}
+
+			// Create symlinks in data dir pointing to concrete files (if not already in data dir)
+			dataDirTicketFile := filepath.Join(ticketDir, "ticket.md")
+			dataDirSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+
+			if concreteTicketFile != dataDirTicketFile {
+				if err := common.CreateSymlink(concreteTicketFile, dataDirTicketFile); err != nil {
+					warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
+				} else {
+					successMsg("Created symlink in data directory")
+				}
+			}
+
+			if concreteSessionsFile != dataDirSessionsFile {
+				if err := common.CreateSymlink(concreteSessionsFile, dataDirSessionsFile); err != nil {
+					warningMsg(fmt.Sprintf("Failed to create data dir sessions symlink: %v", err))
+				}
+			}
+		}
+	}
+
 	// Create files/symlinks in current directory
 	currentDir, err := os.Getwd()
 	if err != nil {
@@ -362,66 +398,63 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 	symlinkPath := filepath.Join(currentDir, symlinkName)
 	sessionsSymlinkName := "SESSIONS.md"
 	sessionsSymlinkPath := filepath.Join(currentDir, sessionsSymlinkName)
-	sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 
-	// If this is the primary project, move concrete files here
-	if projectName != "" {
-		ticket := cfg.GetTicket(ticketID, false)
-		if ticket != nil && ticket.PrimaryContextName == projectName && !linkToExisting {
-			// Move concrete files from data dir to primary project
-			if !dryRun {
-				// Move ticket.md
-				if common.FileExists(ticketFile) {
-					if err := common.CopyFile(ticketFile, symlinkPath); err != nil {
-						return fmt.Errorf("failed to copy ticket file to project: %w", err)
-					}
-					os.Remove(ticketFile)
-					// Create symlink in data dir pointing to project
-					if err := common.CreateSymlink(symlinkPath, ticketFile); err != nil {
-						return fmt.Errorf("failed to create data dir symlink: %w", err)
-					}
-					successMsg(fmt.Sprintf("Created ticket file in primary project: %s", symlinkName))
-				}
+	// V2: Create symlinks in current directory based on project role
+	ticket := cfg.GetTicket(ticketID, false)
+	if projectName != "" && ticket != nil && ticket.PrimaryContextName == projectName {
+		// Primary project: concrete files are already here, skip symlink creation
+		if !dryRun {
+			infoMsg(fmt.Sprintf("Concrete files in primary project: %s, %s", symlinkName, sessionsSymlinkName))
 
-				// Move SESSIONS.md
-				if common.FileExists(sessionsFile) {
-					if err := common.CopyFile(sessionsFile, sessionsSymlinkPath); err != nil {
-						return fmt.Errorf("failed to copy sessions file to project: %w", err)
-					}
-					os.Remove(sessionsFile)
-					// Create symlink in data dir pointing to project
-					if err := common.CreateSymlink(sessionsSymlinkPath, sessionsFile); err != nil {
-						return fmt.Errorf("failed to create data dir sessions symlink: %w", err)
-					}
-					successMsg(fmt.Sprintf("Created sessions file in primary project: %s", sessionsSymlinkName))
-				}
+			// Update .clauderc with ticket.md only (not SESSIONS.md - that's for human reference)
+			rcMgr := clauderc.NewManager(currentDir)
+			if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
+				warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
+			} else {
+				successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
 			}
-		} else if ticket != nil && ticket.PrimaryContextName != projectName {
-			// Secondary project - create symlink to primary project
-			primaryProject := cfg.GetProject(ticket.PrimaryContextName)
-			if primaryProject != nil {
-				primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-				primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
+		}
+	} else if projectName != "" && ticket != nil && ticket.PrimaryContextName != projectName {
+		// Secondary project - create symlinks to primary project
+		primaryProject := cfg.GetProject(ticket.PrimaryContextName)
+		if primaryProject != nil {
+			primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
+			primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
 
-				if !dryRun {
-					// Create symlinks to primary project
-					if common.FileExists(primaryTicketFile) {
-						if err := common.CreateSymlink(primaryTicketFile, symlinkPath); err != nil {
-							warningMsg(fmt.Sprintf("Failed to create secondary symlink: %v", err))
-						} else {
-							successMsg(fmt.Sprintf("Created symlink to primary: %s", symlinkName))
-						}
+			if dryRun {
+				dryRunMsg(fmt.Sprintf("Would create symlink to primary: %s", symlinkPath))
+				dryRunMsg(fmt.Sprintf("Would create symlink to primary: %s", sessionsSymlinkPath))
+			} else {
+				// Create symlinks to primary project
+				if common.FileExists(primaryTicketFile) {
+					if err := common.CreateSymlink(primaryTicketFile, symlinkPath); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create secondary symlink: %v", err))
+					} else {
+						successMsg(fmt.Sprintf("Created symlink to primary: %s", symlinkName))
 					}
-					if common.FileExists(primarySessionsFile) {
-						if err := common.CreateSymlink(primarySessionsFile, sessionsSymlinkPath); err != nil {
-							warningMsg(fmt.Sprintf("Failed to create secondary sessions symlink: %v", err))
-						}
+				}
+				if common.FileExists(primarySessionsFile) {
+					if err := common.CreateSymlink(primarySessionsFile, sessionsSymlinkPath); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create secondary sessions symlink: %v", err))
+					} else {
+						successMsg(fmt.Sprintf("Created symlink to primary: %s", sessionsSymlinkName))
 					}
+				}
+
+				// Update .clauderc
+				rcMgr := clauderc.NewManager(currentDir)
+				if err := rcMgr.AddFile(symlinkName, dryRun); err != nil {
+					warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", symlinkName, err))
+				} else {
+					successMsg(fmt.Sprintf("Added %s to .clauderc", symlinkName))
 				}
 			}
 		}
 	} else {
 		// No project linked - create symlinks to data dir
+		ticketFile := filepath.Join(ticketDir, "ticket.md")
+		sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would create symlink: %s", symlinkPath))
 			dryRunMsg(fmt.Sprintf("Would create symlink: %s (for human reference only)", sessionsSymlinkPath))
@@ -440,22 +473,22 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			// Create SESSIONS.md symlink (with unique name if exists)
 			finalSessionsSymlinkPath := sessionsSymlinkPath
 			finalSessionsSymlinkName := sessionsSymlinkName
-		if common.FileExists(sessionsSymlinkPath) {
-			// Find unique name with suffix
-			suffix := 1
-			for {
-				finalSessionsSymlinkName = fmt.Sprintf("SESSIONS-%s.md", ticketID)
-				finalSessionsSymlinkPath = filepath.Join(currentDir, finalSessionsSymlinkName)
-				if !common.FileExists(finalSessionsSymlinkPath) {
-					break
-				}
-				suffix++
-				if suffix > 100 {
-					warningMsg("Could not find unique name for SESSIONS.md")
-					break
+			if common.FileExists(sessionsSymlinkPath) {
+				// Find unique name with suffix
+				suffix := 1
+				for {
+					finalSessionsSymlinkName = fmt.Sprintf("SESSIONS-%s.md", ticketID)
+					finalSessionsSymlinkPath = filepath.Join(currentDir, finalSessionsSymlinkName)
+					if !common.FileExists(finalSessionsSymlinkPath) {
+						break
+					}
+					suffix++
+					if suffix > 100 {
+						warningMsg("Could not find unique name for SESSIONS.md")
+						break
+					}
 				}
 			}
-		}
 
 			if common.FileExists(finalSessionsSymlinkPath) {
 				warningMsg(fmt.Sprintf("File already exists: %s", finalSessionsSymlinkPath))
@@ -628,35 +661,41 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 			dryRunMsg(fmt.Sprintf("Would create symlink: %s", symlinkPath))
 			dryRunMsg(fmt.Sprintf("Would add to .clauderc"))
 		} else {
-			// For primary project, move concrete files
+			// For primary project, ensure concrete files are in project
 			if ticket.PrimaryContextName == projectName {
-				// Move concrete files from data dir to primary project
-				if common.FileExists(ticketFile) && !common.IsSymlink(ticketFile) {
-					if err := common.CopyFile(ticketFile, symlinkPath); err != nil {
-						errorMsg(fmt.Sprintf("Failed to copy ticket file: %v", err))
-						continue
+				// Check if files already exist in primary project (new v2 tickets)
+				if common.FileExists(symlinkPath) && !common.IsSymlink(symlinkPath) {
+					successMsg("Concrete files already in primary project")
+				} else {
+					// Migrate from old location (data dir) if needed
+					if common.FileExists(ticketFile) && !common.IsSymlink(ticketFile) {
+						if err := common.CopyFile(ticketFile, symlinkPath); err != nil {
+							errorMsg(fmt.Sprintf("Failed to copy ticket file: %v", err))
+							continue
+						}
+						os.Remove(ticketFile)
+						// Create symlink in data dir pointing to project
+						if err := common.CreateSymlink(symlinkPath, ticketFile); err != nil {
+							warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
+						}
+						successMsg("Migrated ticket file to primary project")
 					}
-					os.Remove(ticketFile)
-					// Create symlink in data dir pointing to project
-					if err := common.CreateSymlink(symlinkPath, ticketFile); err != nil {
-						warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
-					}
-					successMsg("Created ticket file in primary project")
-				}
 
-				sessionsFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "SESSIONS.md")
-				if common.FileExists(sessionsFile) && !common.IsSymlink(sessionsFile) {
-					if err := common.CopyFile(sessionsFile, sessionsSymlinkPath); err != nil {
-						warningMsg(fmt.Sprintf("Failed to copy sessions file: %v", err))
-					} else {
-						os.Remove(sessionsFile)
-						if err := common.CreateSymlink(sessionsSymlinkPath, sessionsFile); err != nil {
-							warningMsg(fmt.Sprintf("Failed to create data dir sessions symlink: %v", err))
+					sessionsFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "SESSIONS.md")
+					if common.FileExists(sessionsFile) && !common.IsSymlink(sessionsFile) {
+						if err := common.CopyFile(sessionsFile, sessionsSymlinkPath); err != nil {
+							warningMsg(fmt.Sprintf("Failed to copy sessions file: %v", err))
+						} else {
+							os.Remove(sessionsFile)
+							if err := common.CreateSymlink(sessionsSymlinkPath, sessionsFile); err != nil {
+								warningMsg(fmt.Sprintf("Failed to create data dir sessions symlink: %v", err))
+							}
+							successMsg("Migrated sessions file to primary project")
 						}
 					}
 				}
 			} else {
-				// Secondary project or V1 - create symlink
+				// Secondary project - create symlink to target
 				if err := common.CreateSymlink(ticketTarget, symlinkPath); err != nil {
 					errorMsg(fmt.Sprintf("Failed to create symlink: %v", err))
 					continue
@@ -667,6 +706,8 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 				if common.FileExists(sessionsTarget) {
 					if err := common.CreateSymlink(sessionsTarget, sessionsSymlinkPath); err != nil {
 						warningMsg(fmt.Sprintf("Failed to create sessions symlink: %v", err))
+					} else {
+						successMsg("Created sessions symlink")
 					}
 				}
 			}
@@ -788,18 +829,59 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+		ticketFilePath := filepath.Join(project.ProjectPath, ticketID+".md")
+		sessionsFilePath := filepath.Join(project.ProjectPath, "SESSIONS.md")
 
 		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would remove symlink: %s", symlinkPath))
+			dryRunMsg(fmt.Sprintf("Would remove: %s", ticketFilePath))
 			dryRunMsg(fmt.Sprintf("Would remove from .clauderc"))
 		} else {
-			// Remove symlink
-			if common.FileExists(symlinkPath) {
-				if err := common.RemoveSymlink(symlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove symlink: %v", err))
-				} else {
-					successMsg("Removed symlink")
+			// Handle primary vs secondary project
+			isPrimary := ticket.PrimaryContextName == projectName
+
+			if isPrimary {
+				// Primary project: remove concrete files and update data dir
+				if common.FileExists(ticketFilePath) {
+					// Move concrete file back to data dir before deleting
+					ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+					dataDirTicketFile := filepath.Join(ticketDir, "ticket.md")
+					dataDirSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+
+					// Remove data dir symlinks first
+					common.RemoveSymlink(dataDirTicketFile)
+					common.RemoveSymlink(dataDirSessionsFile)
+
+					// Move concrete files to data dir
+					if err := common.CopyFile(ticketFilePath, dataDirTicketFile); err != nil {
+						warningMsg(fmt.Sprintf("Failed to move ticket file to data dir: %v", err))
+					} else {
+						os.Remove(ticketFilePath)
+						successMsg("Moved ticket file to data directory")
+					}
+
+					if common.FileExists(sessionsFilePath) {
+						if err := common.CopyFile(sessionsFilePath, dataDirSessionsFile); err != nil {
+							warningMsg(fmt.Sprintf("Failed to move sessions file to data dir: %v", err))
+						} else {
+							os.Remove(sessionsFilePath)
+						}
+					}
+
+					// Clear primary context
+					ticket.PrimaryContextName = ""
+				}
+			} else {
+				// Secondary project: just remove symlinks
+				if common.FileExists(ticketFilePath) {
+					if err := common.RemoveSymlink(ticketFilePath); err != nil {
+						warningMsg(fmt.Sprintf("Failed to remove symlink: %v", err))
+					} else {
+						successMsg("Removed symlink")
+					}
+				}
+
+				if common.FileExists(sessionsFilePath) {
+					common.RemoveSymlink(sessionsFilePath)
 				}
 			}
 
