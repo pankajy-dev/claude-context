@@ -69,9 +69,12 @@ func runLink(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("context name already exists: %s", contextName)
 	}
 
+	// Detect the correct case for claude.md in the project (CLAUDE.md or claude.md)
+	claudeFileName := common.DetectCaseVariant(projectPath, "CLAUDE.md", "claude.md")
+
 	// Create context directory
 	contextDir := filepath.Join(cfgMgr.GetContextsPath(), contextName)
-	contextFile := filepath.Join(contextDir, "claude.md")
+	contextFile := filepath.Join(contextDir, claudeFileName)
 
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would create context directory: %s", contextDir))
@@ -83,14 +86,14 @@ func runLink(cmd *cobra.Command, args []string) error {
 		successMsg(fmt.Sprintf("Created context directory: %s", contextDir))
 	}
 
-	// Handle existing claude.md in project
-	projectClaudeMD := filepath.Join(projectPath, "claude.md")
+	// Handle existing file in project
+	projectClaudeMD := filepath.Join(projectPath, claudeFileName)
 
 	// Concrete file stays in project, data dir symlinks to it
 	if common.FileExists(projectClaudeMD) && !common.IsSymlink(projectClaudeMD) {
-		infoMsg("Project already has claude.md file - using existing")
+		infoMsg(fmt.Sprintf("Project already has %s file - using existing", claudeFileName))
 		if !dryRun {
-			successMsg("Using existing claude.md")
+			successMsg(fmt.Sprintf("Using existing %s", claudeFileName))
 		}
 	} else if common.IsSymlink(projectClaudeMD) {
 		// Old symlink exists - remove it
@@ -107,9 +110,9 @@ func runLink(cmd *cobra.Command, args []string) error {
 		if !dryRun {
 			template := fmt.Sprintf("# %s\n\n", contextName)
 			if err := os.WriteFile(projectClaudeMD, []byte(template), 0644); err != nil {
-				return fmt.Errorf("failed to create project claude.md: %w", err)
+				return fmt.Errorf("failed to create project %s: %w", claudeFileName, err)
 			}
-			successMsg("Created claude.md in project")
+			successMsg(fmt.Sprintf("Created %s in project", claudeFileName))
 		}
 	}
 
@@ -160,8 +163,8 @@ func runLink(cmd *cobra.Command, args []string) error {
 		// Only update .clauderc if it exists OR we have globals
 		// If only claude.md and no .clauderc exists, don't create it (auto-loaded)
 		if rcMgr.Exists() || hasEnabledGlobals {
-			// Add claude.md to .clauderc
-			if err := rcMgr.AddFile("claude.md", false); err != nil {
+			// Add the context file to .clauderc
+			if err := rcMgr.AddFile(claudeFileName, false); err != nil {
 				warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
 			} else {
 				successMsg("Updated .clauderc")
@@ -183,7 +186,7 @@ func runLink(cmd *cobra.Command, args []string) error {
 	project := config.Project{
 		ContextName:   contextName,
 		ProjectPath:   projectPath,
-		ContextPath:   filepath.Join("contexts", contextName, "claude.md"),
+		ContextPath:   filepath.Join("contexts", contextName, claudeFileName),
 		CreatedAt:     time.Now(),
 		LastModified:  time.Now(),
 		Status:        "active",

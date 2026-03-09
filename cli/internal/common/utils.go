@@ -243,3 +243,23 @@ func CopyFile(src, dst string) error {
 	return nil
 }
 
+// DetectCaseVariant checks for case variants of a base filename in a directory
+// Returns the actual filename if found, otherwise returns the default (first variant)
+// Example: DetectCaseVariant("/path/to/dir", "CLAUDE.md", "claude.md")
+// will return "CLAUDE.md" if it exists, "claude.md" if it exists, or "CLAUDE.md" as default
+func DetectCaseVariant(dir string, variants ...string) string {
+	if len(variants) == 0 {
+		return ""
+	}
+
+	// Check each variant
+	for _, variant := range variants {
+		if FileExists(filepath.Join(dir, variant)) {
+			return variant
+		}
+	}
+
+	// Return first variant as default
+	return variants[0]
+}
+

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/pankaj/claude-context/internal/common"
 )
 
 // ClaudeRC represents a .clauderc configuration file
@@ -80,14 +82,15 @@ func (m *Manager) AddFile(fileName string, dryRun bool) error {
 
 	if !m.Exists() {
 		// Check for existing context files when creating .clauderc
-		claudeMD := filepath.Join(m.projectPath, "claude.md")
-		globalMD := filepath.Join(m.projectPath, "global.md")
-
-		if _, err := os.Stat(claudeMD); err == nil {
-			initialFiles = append(initialFiles, "claude.md")
+		// Detect the actual case used on disk and preserve it
+		claudeName := common.DetectCaseVariant(m.projectPath, "CLAUDE.md", "claude.md")
+		if common.FileExists(filepath.Join(m.projectPath, claudeName)) {
+			initialFiles = append(initialFiles, claudeName)
 		}
-		if _, err := os.Stat(globalMD); err == nil {
-			initialFiles = append(initialFiles, "global.md")
+
+		globalName := common.DetectCaseVariant(m.projectPath, "GLOBAL.md", "global.md")
+		if common.FileExists(filepath.Join(m.projectPath, globalName)) {
+			initialFiles = append(initialFiles, globalName)
 		}
 	}
 
