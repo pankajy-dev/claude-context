@@ -57,6 +57,9 @@ func init() {
 	ticketCreateCmd.Flags().StringVar(&ticketTitle, "title", "", "Human-readable title for the ticket")
 	ticketCreateCmd.Flags().StringVar(&ticketTags, "tags", "", "Comma-separated tags")
 	ticketCreateCmd.Flags().StringVar(&ticketNotes, "notes", "", "Additional notes or context")
+	// Hide global flags that aren't used by this command
+	ticketCreateCmd.InheritedFlags().MarkHidden("ticket")  // Uses positional arg instead
+	ticketCreateCmd.InheritedFlags().MarkHidden("project") // Auto-detects from current directory
 
 	// ticket link
 	ticketCmd.AddCommand(ticketLinkCmd)
