@@ -81,26 +81,27 @@ func runVerify(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check claude.md: project has concrete file, data dir has symlink
-		claudeMD := filepath.Join(project.ProjectPath, "claude.md")
+		// Check context file: project has concrete file, data dir has symlink
+		contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
+		claudeMD := filepath.Join(project.ProjectPath, contextFileName)
 		contextFile := filepath.Join(dataDir, project.ContextPath)
 
 		if !common.FileExists(claudeMD) {
 			issues = append(issues, verifyIssue{
 				project:     project.ContextName,
 				issueType:   "missing-file",
-				description: "claude.md file is missing (should be concrete file)",
+				description: fmt.Sprintf("%s file is missing (should be concrete file)", contextFileName),
 				fixable:     true,
 			})
-			fmt.Printf("  ✗ claude.md missing\n")
+			fmt.Printf("  ✗ %s missing\n", contextFileName)
 		} else if common.IsSymlink(claudeMD) {
 			issues = append(issues, verifyIssue{
 				project:     project.ContextName,
 				issueType:   "unexpected-symlink",
-				description: "claude.md is a symlink (expected concrete file)",
+				description: fmt.Sprintf("%s is a symlink (expected concrete file)", contextFileName),
 				fixable:     false,
 			})
-			fmt.Printf("  ✗ claude.md should be concrete file, not symlink\n")
+			fmt.Printf("  ✗ %s should be concrete file, not symlink\n", contextFileName)
 		} else {
 			// Concrete file exists - check data dir symlink
 			if !common.FileExists(contextFile) {
@@ -130,7 +131,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 					})
 					fmt.Printf("  ✗ Data dir symlink wrong target\n")
 				} else {
-					fmt.Printf("  ✓ claude.md OK\n")
+					fmt.Printf("  ✓ %s OK\n", contextFileName)
 				}
 			}
 		}
@@ -330,8 +331,9 @@ func runVerify(cmd *cobra.Command, args []string) error {
 
 			switch issue.issueType {
 			case "missing-symlink", "wrong-target", "broken-symlink":
-				// Recreate claude.md symlink
-				claudeMD := filepath.Join(project.ProjectPath, "claude.md")
+				// Recreate context symlink
+				contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
+				claudeMD := filepath.Join(project.ProjectPath, contextFileName)
 				contextFile := filepath.Join(dataDir, project.ContextPath)
 
 				// Ensure context file exists
@@ -352,10 +354,10 @@ func runVerify(cmd *cobra.Command, args []string) error {
 						warningMsg(fmt.Sprintf("Failed to fix symlink for %s: %v", issue.project, err))
 						continue
 					}
-					successMsg(fmt.Sprintf("Fixed claude.md symlink for %s", issue.project))
+					successMsg(fmt.Sprintf("Fixed %s symlink for %s", contextFileName, issue.project))
 					fixed++
 				} else {
-					dryRunMsg(fmt.Sprintf("Would fix claude.md symlink for %s", issue.project))
+					dryRunMsg(fmt.Sprintf("Would fix %s symlink for %s", contextFileName, issue.project))
 				}
 
 			case "missing-context":

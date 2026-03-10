@@ -208,6 +208,46 @@ cctx init
 cctx --data-dir /path/to/data init
 ```
 
+## SESSIONS.md Format
+
+The sessions file uses a **two-part structure** to track development work:
+
+1. **Running Totals Block** (top of file, gets updated on every write)
+   - Aggregates cumulative project costs and metrics
+   - Located immediately after the template section
+   - Updates in-place (exception to append-only rule)
+
+2. **Session Entries** (append-only)
+   - Individual session details without cost breakdowns
+   - Reference "see totals above" for costs
+   - Or optionally include session-specific cost as single line: `**Cost:** $X.XX`
+
+### Structure Example
+
+```markdown
+# Development Sessions
+[Template section]
+---
+## 📊 Project Totals (Updated: YYYY-MM-DD)
+**Total cost:** $X.XX
+**Total sessions:** X
+[Detailed cost breakdown]
+---
+## Session Entries
+### YYYY-MM-DD | branch-name
+**Summary:** ...
+**Cost:** $X.XX (cumulative: $XX.XX)
+---
+```
+
+### Rules
+- ✅ **DO** update the Project Totals block on every session write
+- ✅ **DO** append new session entries
+- ❌ **DON'T** create duplicate cost blocks in each entry
+- ❌ **DON'T** modify previous session entries
+
+This approach gives you **one authoritative cost block** (the running total) that gets updated each time, while session entries remain append-only with just their incremental cost.
+
 ## Recommended Claude Code Settings
 
 For optimal integration with Claude Code, configure auto-permissions and policies.

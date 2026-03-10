@@ -290,9 +290,10 @@ func updateSymlinks(dataDir string) error {
 
 	// Update project symlinks
 	for _, project := range cfg.ManagedProjects {
-		// Update claude.md symlink
-		symlinkPath := filepath.Join(project.ProjectPath, "claude.md")
+		// Update context symlink - extract filename from ContextPath
 		contextPath := filepath.Join(dataDir, project.ContextPath)
+		contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
+		symlinkPath := filepath.Join(project.ProjectPath, contextFileName)
 
 		os.Remove(symlinkPath) // Remove old symlink
 
