@@ -10,6 +10,7 @@ import (
 
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
+	"github.com/pankaj/claude-context/internal/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -204,11 +205,22 @@ func initializeFresh(dataDir string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
+	// Copy all embedded templates to user directory (single source of truth)
+	infoMsg("Copying default templates...")
+	copied, err := templates.CopyAllEmbeddedTemplates(dataDir, false)
+	if err != nil {
+		warningMsg(fmt.Sprintf("Warning: failed to copy templates: %v", err))
+		warningMsg("You can manually copy them later using: cctx global templates sync")
+	} else {
+		successMsg(fmt.Sprintf("Copied %d templates to %s/templates/", copied, dataDir))
+	}
+
 	successMsg(fmt.Sprintf("Initialized %s", dataDir))
 	infoMsg("")
-	infoMsg("Templates are embedded in the binary (source of truth)")
-	infoMsg(fmt.Sprintf("To customize templates, copy them to: %s/templates/", dataDir))
+	infoMsg(fmt.Sprintf("Templates location: %s/templates/", dataDir))
+	infoMsg("You can edit these templates directly - they are the source of truth")
 	infoMsg("View templates: cctx global templates list")
+	infoMsg("Reset a template: cctx global templates reset <name>")
 	infoMsg("")
 	infoMsg("Next steps:")
 	infoMsg("  1. Link your first project: cctx link /path/to/project")
@@ -257,9 +269,18 @@ func migrateOldInstallation(oldConfigPath, dataDir string) error {
 		infoMsg("Migrating user templates...")
 		if err := copyDir(oldTemplatesDir, newTemplatesDir); err != nil {
 			warningMsg(fmt.Sprintf("Failed to copy templates: %v", err))
-			warningMsg("Templates are now embedded in binary - you can recreate customizations later")
+			// Try to copy embedded templates as fallback
+			if copied, err := templates.CopyAllEmbeddedTemplates(dataDir, false); err == nil {
+				successMsg(fmt.Sprintf("Copied %d default templates as fallback", copied))
+			}
 		} else {
-			successMsg("User templates migrated (these will override embedded templates)")
+			successMsg("User templates migrated")
+		}
+	} else {
+		// No old templates, copy embedded ones
+		infoMsg("Copying default templates...")
+		if copied, err := templates.CopyAllEmbeddedTemplates(dataDir, false); err == nil {
+			successMsg(fmt.Sprintf("Copied %d default templates", copied))
 		}
 	}
 

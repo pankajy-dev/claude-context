@@ -20,11 +20,13 @@ var globalCmd = &cobra.Command{
 }
 
 var (
-	globalTitle       string
-	globalDescription string
-	globalAddExisting bool
-	globalKeepFile    bool
-	globalLinkAll     bool
+	globalTitle             string
+	globalDescription       string
+	globalAddExisting       bool
+	globalKeepFile          bool
+	globalLinkAll           bool
+	globalTemplatesResetAll bool
+	globalTemplatesForce    bool
 )
 
 // global init subcommand
@@ -140,19 +142,33 @@ var globalTemplatesShowCmd = &cobra.Command{
 	RunE:  runGlobalTemplatesShow,
 }
 
-var globalTemplatesCopyCmd = &cobra.Command{
-	Use:   "copy <template-name>",
-	Short: "Copy template to user directory for customization",
-	Long: `Copy an embedded template to ~/.cctx/templates/ so you can customize it.
+var globalTemplatesResetCmd = &cobra.Command{
+	Use:   "reset [template-name]",
+	Short: "Reset template(s) to default version",
+	Long: `Reset one or all templates in ~/.cctx/templates/ back to their default embedded versions.
 
-The copied template will take precedence over the embedded version.
+This overwrites any customizations you've made to the template(s).
+
+Examples:
+  cctx global templates reset ticket    # Reset single template
+  cctx global templates reset --all     # Reset all templates`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runGlobalTemplatesReset,
+}
+
+var globalTemplatesSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Add missing templates from embedded defaults",
+	Long: `Add any missing templates to ~/.cctx/templates/ from embedded defaults.
+
+This is non-destructive - it only adds templates that don't exist.
+Existing templates are never overwritten (use 'reset' for that).
+
+This is useful after upgrading cctx or when new templates are added.
 
 Example:
-  cctx global templates copy ticket
-  # Copies to ~/.cctx/templates/ticket.md
-  # Edit it: vim ~/.cctx/templates/ticket.md`,
-	Args: cobra.ExactArgs(1),
-	RunE: runGlobalTemplatesCopy,
+  cctx global templates sync    # Add missing templates only`,
+	RunE: runGlobalTemplatesSync,
 }
 
 func init() {
@@ -191,8 +207,10 @@ func init() {
 	globalCmd.AddCommand(globalTemplatesCmd)
 	globalTemplatesCmd.AddCommand(globalTemplatesListCmd)
 	globalTemplatesCmd.AddCommand(globalTemplatesShowCmd)
-	globalTemplatesCmd.AddCommand(globalTemplatesCopyCmd)
-	globalTemplatesCopyCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Overwrite existing template")
+	globalTemplatesCmd.AddCommand(globalTemplatesResetCmd)
+	globalTemplatesResetCmd.Flags().BoolVarP(&globalTemplatesResetAll, "all", "a", false, "Reset all templates")
+	globalTemplatesResetCmd.Flags().BoolVarP(&globalTemplatesForce, "force", "f", false, "Skip confirmation prompt")
+	globalTemplatesCmd.AddCommand(globalTemplatesSyncCmd)
 }
 
 func runGlobalInit(cmd *cobra.Command, args []string) error {
@@ -912,11 +930,13 @@ func runGlobalTemplatesList(cmd *cobra.Command, args []string) error {
 	w.Flush()
 
 	fmt.Printf("\nTotal: %d templates\n", len(tmplList))
-	fmt.Printf("\nView template content: cctx global templates show <name>\n")
-	fmt.Printf("Copy to customize: cctx global templates copy <name>\n")
-	fmt.Printf("\nTemplates are loaded from:\n")
-	fmt.Printf("  1. User overrides: %s/templates/ (if exists)\n", dataDir)
-	fmt.Printf("  2. Embedded defaults: built into binary (source of truth)\n")
+	fmt.Printf("\nTemplates location: %s/templates/\n", dataDir)
+	fmt.Printf("These are the source of truth - edit them directly to customize\n")
+	fmt.Printf("\nCommands:\n")
+	fmt.Printf("  cctx global templates show <name>   - View template content\n")
+	fmt.Printf("  cctx global templates reset <name>  - Reset one template to default\n")
+	fmt.Printf("  cctx global templates reset --all   - Reset all templates to defaults\n")
+	fmt.Printf("  cctx global templates sync          - Add missing templates (non-destructive)\n")
 
 	return nil
 }
@@ -937,74 +957,127 @@ func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
 
 	// Display template info
 	fmt.Printf("Template: %s\n", templateName)
-	fmt.Printf("Source: %s", source)
-	if source == "user" {
-		fmt.Printf(" (%s/templates/%s.md)\n", dataDir, templateName)
-	} else {
-		fmt.Printf(" (built into binary)\n")
+	templatePath := filepath.Join(dataDir, "templates", templateName+".md")
+	fmt.Printf("Location: %s\n", templatePath)
+	if source == "embedded" {
+		warningMsg("Note: Using embedded fallback (templates directory missing?)")
+		infoMsg("Run 'cctx init' or 'cctx global templates sync' to populate templates")
 	}
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Println(string(content))
 	fmt.Println(strings.Repeat("-", 80))
 
-	if source == "embedded" {
+	if source == "user" {
 		fmt.Println()
-		infoMsg(fmt.Sprintf("To customize this template, run: cctx global templates copy %s", templateName))
+		infoMsg(fmt.Sprintf("Edit: vim %s", templatePath))
+		infoMsg(fmt.Sprintf("Reset: cctx global templates reset %s", templateName))
 	}
 
 	return nil
 }
 
-func runGlobalTemplatesCopy(cmd *cobra.Command, args []string) error {
+func runGlobalTemplatesReset(cmd *cobra.Command, args []string) error {
+	dataDir := GetDataDirOrExit()
+
+	// Handle --all flag
+	if globalTemplatesResetAll {
+		if len(args) > 0 {
+			return fmt.Errorf("cannot specify template name with --all flag")
+		}
+
+		fmt.Println()
+		warningMsg("This will reset ALL templates to their default versions")
+		warningMsg("Any customizations will be lost")
+		fmt.Println()
+
+		if !globalTemplatesForce && !dryRun {
+			if !common.Confirm("Are you sure you want to reset all templates?", false) {
+				infoMsg("Cancelled. No changes made.")
+				return nil
+			}
+		}
+
+		if dryRun {
+			dryRunMsg("Would reset all templates to defaults")
+			return nil
+		}
+
+		// Copy all templates with overwrite
+		copied, err := templates.CopyAllEmbeddedTemplates(dataDir, true)
+		if err != nil {
+			return fmt.Errorf("failed to reset templates: %w", err)
+		}
+
+		fmt.Println()
+		successMsg(fmt.Sprintf("Reset all templates (%d files)", copied))
+		infoMsg(fmt.Sprintf("Templates location: %s/templates/", dataDir))
+
+		return nil
+	}
+
+	// Handle single template reset
+	if len(args) == 0 {
+		return fmt.Errorf("template name required (or use --all to reset all templates)")
+	}
+
 	templateName := args[0]
 
 	// Normalize template name (remove .md if provided)
 	templateName = strings.TrimSuffix(templateName, ".md")
 
-	dataDir := GetDataDirOrExit()
+	// Check if template exists in user directory
+	userTemplatePath := filepath.Join(dataDir, "templates", templateName+".md")
 
-	// Get the embedded template (we want to copy the embedded version)
-	content, source, err := templates.GetTemplate(templateName, dataDir)
-	if err != nil {
-		return fmt.Errorf("%w\nAvailable templates: use 'cctx global templates list'", err)
-	}
-
-	// Check if user template already exists
-	userTemplatesDir := filepath.Join(dataDir, "templates")
-	userTemplatePath := filepath.Join(userTemplatesDir, templateName+".md")
-
-	if common.FileExists(userTemplatePath) && !ticketForce {
-		return fmt.Errorf("template already exists at %s\nUse --force to overwrite", userTemplatePath)
+	if common.FileExists(userTemplatePath) && !globalTemplatesForce && !dryRun {
+		fmt.Printf("\nThis will overwrite your customized template at:\n  %s\n\n", userTemplatePath)
+		if !common.Confirm("Are you sure you want to reset to default?", false) {
+			infoMsg("Cancelled. No changes made.")
+			return nil
+		}
 	}
 
 	if dryRun {
-		dryRunMsg(fmt.Sprintf("Would create directory: %s", userTemplatesDir))
-		dryRunMsg(fmt.Sprintf("Would copy template to: %s", userTemplatePath))
+		dryRunMsg(fmt.Sprintf("Would reset template: %s", userTemplatePath))
 		return nil
 	}
 
-	// Create templates directory if it doesn't exist
-	if err := common.EnsureDir(userTemplatesDir); err != nil {
-		return fmt.Errorf("failed to create templates directory: %w", err)
-	}
-
-	// Write template to user directory
-	if err := os.WriteFile(userTemplatePath, content, 0644); err != nil {
-		return fmt.Errorf("failed to write template: %w", err)
+	// Copy from embedded
+	if err := templates.CopyEmbeddedTemplate(templateName, dataDir); err != nil {
+		return fmt.Errorf("failed to reset template: %w", err)
 	}
 
 	fmt.Println()
-	successMsg(fmt.Sprintf("Copied %s template to: %s", templateName, userTemplatePath))
+	successMsg(fmt.Sprintf("Reset %s template to default", templateName))
+	infoMsg(fmt.Sprintf("Location: %s", userTemplatePath))
+	infoMsg("You can edit this file to customize it again")
 
-	if source == "user" {
-		infoMsg("Note: Template was already a user override, copied existing customization")
+	return nil
+}
+
+func runGlobalTemplatesSync(cmd *cobra.Command, args []string) error {
+	dataDir := GetDataDirOrExit()
+
+	if dryRun {
+		dryRunMsg("Would add missing templates from defaults")
+		return nil
+	}
+
+	// Copy missing templates only (non-destructive)
+	copied, err := templates.CopyAllEmbeddedTemplates(dataDir, false)
+	if err != nil {
+		return fmt.Errorf("failed to sync templates: %w", err)
+	}
+
+	fmt.Println()
+	if copied == 0 {
+		infoMsg("All templates are up to date")
+		infoMsg("No missing templates to add")
 	} else {
-		infoMsg("You can now edit this template to customize it")
-		infoMsg(fmt.Sprintf("Edit: vim %s", userTemplatePath))
+		successMsg(fmt.Sprintf("Added %d missing templates", copied))
 	}
-	fmt.Println()
-	infoMsg("Your customized template will be used for all new tickets/contexts")
-	infoMsg(fmt.Sprintf("To revert to embedded template, delete: %s", userTemplatePath))
+	infoMsg(fmt.Sprintf("Templates location: %s/templates/", dataDir))
+
+	return nil
 
 	return nil
 }

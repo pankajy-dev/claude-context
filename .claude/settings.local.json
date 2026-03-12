@@ -18,7 +18,10 @@
       "mcp__atlassian__getAccessibleAtlassianResources",
       "mcp__atlassian__searchJiraIssuesUsingJql",
       "Bash(hash:*)",
-      "Bash(cctx ticket delete TEST-V2-FINAL --force)"
+      "Bash(cctx ticket delete TEST-V2-FINAL --force)",
+      "Bash(cd cli:*)",
+      "Bash(go build:*)",
+      "Bash(/tmp/cctx-test global:*)"
     ]
   }
 }

@@ -26,25 +26,17 @@ func GetTemplateFS() fs.FS {
 	return embeddedTemplates
 }
 
-// GetTemplate reads a template by name, checking user dir first, then source dir (dev), then embedded
-// Returns template content and source ("user", "dev", or "embedded")
+// GetTemplate reads a template by name from user directory
+// Falls back to embedded if not found (for safety during migration)
 func GetTemplate(name string, dataDir string) ([]byte, string, error) {
-	// 1. Check user templates first (~/.cctx/templates/)
+	// Primary: Check user templates (~/.cctx/templates/)
+	// This is the single source of truth after initialization
 	userTemplatePath := filepath.Join(dataDir, "templates", name+".md")
 	if content, err := os.ReadFile(userTemplatePath); err == nil {
 		return content, "user", nil
 	}
 
-	// 2. Check source directory (for development) - cli/internal/templates/
-	// This allows editing templates without rebuilding during development
-	if cwd, err := os.Getwd(); err == nil {
-		devTemplatePath := filepath.Join(cwd, "cli", "internal", "templates", name+".md")
-		if content, err := os.ReadFile(devTemplatePath); err == nil {
-			return content, "dev", nil
-		}
-	}
-
-	// 3. Fall back to embedded template (production)
+	// Fallback: embedded template (for safety during migration or if templates dir is missing)
 	content, err := embeddedTemplates.ReadFile(name + ".md")
 	if err != nil {
 		return nil, "", fmt.Errorf("template not found: %s", name)
@@ -52,11 +44,88 @@ func GetTemplate(name string, dataDir string) ([]byte, string, error) {
 	return content, "embedded", nil
 }
 
-// ListTemplates returns all available templates (merged from user + embedded)
-func ListTemplates(dataDir string) ([]Template, error) {
-	templateMap := make(map[string]Template)
+// CopyEmbeddedTemplate copies a specific embedded template to the user directory
+func CopyEmbeddedTemplate(name string, dataDir string) error {
+	// Read from embedded
+	content, err := embeddedTemplates.ReadFile(name + ".md")
+	if err != nil {
+		return fmt.Errorf("template not found in embedded: %s", name)
+	}
 
-	// First, load embedded templates (defaults)
+	// Ensure templates directory exists
+	templatesDir := filepath.Join(dataDir, "templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create templates directory: %w", err)
+	}
+
+	// Write to user directory
+	userTemplatePath := filepath.Join(templatesDir, name+".md")
+	if err := os.WriteFile(userTemplatePath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write template: %w", err)
+	}
+
+	return nil
+}
+
+// CopyAllEmbeddedTemplates copies all embedded templates to user directory
+func CopyAllEmbeddedTemplates(dataDir string, overwrite bool) (int, error) {
+	entries, err := embeddedTemplates.ReadDir(".")
+	if err != nil {
+		return 0, fmt.Errorf("failed to read embedded templates: %w", err)
+	}
+
+	templatesDir := filepath.Join(dataDir, "templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create templates directory: %w", err)
+	}
+
+	copied := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		name := strings.TrimSuffix(entry.Name(), ".md")
+		userTemplatePath := filepath.Join(templatesDir, entry.Name())
+
+		// Skip if exists and overwrite is false
+		if !overwrite {
+			if _, err := os.Stat(userTemplatePath); err == nil {
+				continue
+			}
+		}
+
+		if err := CopyEmbeddedTemplate(name, dataDir); err != nil {
+			return copied, fmt.Errorf("failed to copy %s: %w", name, err)
+		}
+		copied++
+	}
+
+	return copied, nil
+}
+
+// ListTemplates returns all available templates from user directory
+// Falls back to embedded list if user templates directory doesn't exist
+func ListTemplates(dataDir string) ([]Template, error) {
+	templates := []Template{}
+
+	// Primary: Load from user templates directory (single source of truth)
+	userTemplatesDir := filepath.Join(dataDir, "templates")
+	if userEntries, err := os.ReadDir(userTemplatesDir); err == nil {
+		for _, entry := range userEntries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+				name := strings.TrimSuffix(entry.Name(), ".md")
+				templates = append(templates, Template{
+					Name:   name,
+					Path:   filepath.Join("templates", entry.Name()),
+					Source: "user",
+				})
+			}
+		}
+		return templates, nil
+	}
+
+	// Fallback: If user templates don't exist, list embedded (shouldn't happen after init)
 	entries, err := embeddedTemplates.ReadDir(".")
 	if err != nil {
 		return nil, err
@@ -65,33 +134,12 @@ func ListTemplates(dataDir string) ([]Template, error) {
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
 			name := strings.TrimSuffix(entry.Name(), ".md")
-			templateMap[name] = Template{
+			templates = append(templates, Template{
 				Name:   name,
 				Path:   "embedded",
 				Source: "embedded",
-			}
+			})
 		}
-	}
-
-	// Then, override with user templates if they exist
-	userTemplatesDir := filepath.Join(dataDir, "templates")
-	if userEntries, err := os.ReadDir(userTemplatesDir); err == nil {
-		for _, entry := range userEntries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-				name := strings.TrimSuffix(entry.Name(), ".md")
-				templateMap[name] = Template{
-					Name:   name,
-					Path:   filepath.Join("templates", entry.Name()),
-					Source: "user",
-				}
-			}
-		}
-	}
-
-	// Convert map to slice
-	templates := make([]Template, 0, len(templateMap))
-	for _, tmpl := range templateMap {
-		templates = append(templates, tmpl)
 	}
 
 	return templates, nil
