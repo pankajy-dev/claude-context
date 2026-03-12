@@ -57,52 +57,62 @@ func init() {
 	ticketCreateCmd.Flags().StringVar(&ticketTitle, "title", "", "Human-readable title for the ticket")
 	ticketCreateCmd.Flags().StringVar(&ticketTags, "tags", "", "Comma-separated tags")
 	ticketCreateCmd.Flags().StringVar(&ticketNotes, "notes", "", "Additional notes or context")
-	// Hide global flags that aren't used by this command
-	ticketCreateCmd.InheritedFlags().MarkHidden("ticket")  // Uses positional arg instead
-	ticketCreateCmd.InheritedFlags().MarkHidden("project") // Auto-detects from current directory
+	ticketCreateCmd.InheritedFlags().MarkHidden("ticket")
+	ticketCreateCmd.InheritedFlags().MarkHidden("project")
 
 	// ticket link
 	ticketCmd.AddCommand(ticketLinkCmd)
+	ticketLinkCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket unlink
 	ticketCmd.AddCommand(ticketUnlinkCmd)
 	ticketUnlinkCmd.Flags().BoolVar(&ticketAll, "all", false, "Unlink from all projects")
+	ticketUnlinkCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket list
 	ticketCmd.AddCommand(ticketListCmd)
 	ticketListCmd.Flags().StringVar(&ticketStatus, "status", "active", "Filter by status (active|completed|abandoned|archived|all)")
+	ticketListCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket show
 	ticketCmd.AddCommand(ticketShowCmd)
+	ticketShowCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket complete
 	ticketCmd.AddCommand(ticketCompleteCmd)
 	ticketCompleteCmd.Flags().StringVar(&ticketCommits, "commits", "", "Comma-separated commit hashes")
 	ticketCompleteCmd.Flags().StringVar(&ticketPRs, "prs", "", "Comma-separated PR numbers")
+	ticketCompleteCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket abandon
 	ticketCmd.AddCommand(ticketAbandonCmd)
 	ticketAbandonCmd.Flags().StringVar(&ticketReason, "reason", "", "Reason for abandoning")
+	ticketAbandonCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket archive
 	ticketCmd.AddCommand(ticketArchiveCmd)
+	ticketArchiveCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket edit
 	ticketCmd.AddCommand(ticketEditCmd)
 	ticketEditCmd.Flags().StringVar(&ticketTitle, "title", "", "Update title")
 	ticketEditCmd.Flags().StringVar(&ticketTags, "tags", "", "Update tags")
 	ticketEditCmd.Flags().StringVar(&ticketNotes, "notes", "", "Update notes")
+	ticketEditCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket delete
 	ticketCmd.AddCommand(ticketDeleteCmd)
 	ticketDeleteCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
+	ticketDeleteCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket archive-all
 	ticketCmd.AddCommand(ticketArchiveAllCmd)
 	ticketArchiveAllCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
+	ticketArchiveAllCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket working
 	ticketCmd.AddCommand(ticketWorkingCmd)
+	ticketWorkingCmd.InheritedFlags().MarkHidden("ticket")
 }
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
@@ -527,33 +537,33 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 // ticket link subcommand
 var ticketLinkCmd = &cobra.Command{
-	Use:   "link [<project>...]",
+	Use:   "link <ticket-id> [project...]",
 	Short: "Link ticket to one or more projects",
 	Long: `Link a ticket to one or more projects.
 
 Creates symlinks in project directories and updates .clauderc automatically.
 
-Specify ticket and projects using:
-  - Ticket flag + project args: cctx -t TICKET-123 ticket link api-gateway frontend
-  - Ticket flag + project flag: cctx -t TICKET-123 -p api-gateway ticket link
-  - Both env vars: export CCTX_TICKET=TICKET-123 CCTX_PROJECT=api-gateway && cctx ticket link`,
-	Args: cobra.ArbitraryArgs,
+Examples:
+  cctx ticket link TICKET-123 api-gateway frontend
+  cctx ticket link TICKET-123 --project api-gateway
+  cctx ticket link TICKET-123  # Auto-detects current project`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: runTicketLink,
 }
 
 func runTicketLink(cmd *cobra.Command, args []string) error {
+	// Get ticket ID from first argument
+	ticketID := args[0]
+
 	// Get data directory
 	dataDir := GetDataDirOrExit()
 
-	// Get ticket ID from flag or env var
-	ticketID := GetTicketIDOrExit()
-
-	// Determine project names - args are now always project names
+	// Determine project names from remaining args
 	projectNames := []string{}
 
-	if len(args) > 0 {
-		// Projects specified as arguments
-		projectNames = args
+	if len(args) > 1 {
+		// Projects specified as additional arguments
+		projectNames = args[1:]
 	} else {
 		// Try to get from --project flag or env var
 		projectName, err := GetProjectContext(dataDir)
@@ -736,27 +746,27 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 
 // ticket unlink subcommand
 var ticketUnlinkCmd = &cobra.Command{
-	Use:   "unlink [<project>...]",
+	Use:   "unlink <ticket-id> [project...]",
 	Short: "Unlink ticket from project(s)",
 	Long: `Unlink a ticket from one or more projects.
 
 Removes symlinks and updates .clauderc automatically.
 
-Specify ticket and projects using:
-  - Ticket flag + project args: cctx -t TICKET-123 ticket unlink api-gateway frontend
-  - Ticket flag + project flag: cctx -t TICKET-123 -p api-gateway ticket unlink
-  - Both env vars: export CCTX_TICKET=TICKET-123 CCTX_PROJECT=api-gateway && cctx ticket unlink
-  - Use --all to unlink from all projects: cctx -t TICKET-123 ticket unlink --all`,
-	Args: cobra.ArbitraryArgs,
+Examples:
+  cctx ticket unlink TICKET-123 api-gateway frontend
+  cctx ticket unlink TICKET-123 --project api-gateway
+  cctx ticket unlink TICKET-123  # Auto-detects current project
+  cctx ticket unlink TICKET-123 --all  # Unlink from all projects`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: runTicketUnlink,
 }
 
 func runTicketUnlink(cmd *cobra.Command, args []string) error {
+	// Get ticket ID from first argument
+	ticketID := args[0]
+
 	// Get data directory
 	dataDir := GetDataDirOrExit()
-
-	// Get ticket ID from flag or env var
-	ticketID := GetTicketIDOrExit()
 
 	// Load config
 	cfgMgr := config.NewManager(dataDir)
@@ -771,7 +781,7 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ticket not found: %s", ticketID)
 	}
 
-	// Determine project names - args are now always project names
+	// Determine project names from remaining args
 	projectNames := []string{}
 
 	if ticketAll {
@@ -779,9 +789,9 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 		for _, lp := range ticket.LinkedProjects {
 			projectNames = append(projectNames, lp.ContextName)
 		}
-	} else if len(args) > 0 {
-		// Projects specified as arguments
-		projectNames = args
+	} else if len(args) > 1 {
+		// Projects specified as additional arguments
+		projectNames = args[1:]
 	} else {
 		// Try to get from --project flag or env var
 		projectName, err := GetProjectContext(dataDir)
@@ -1053,19 +1063,18 @@ func runTicketList(cmd *cobra.Command, args []string) error {
 
 // ticket show subcommand
 var ticketShowCmd = &cobra.Command{
-	Use:   "show",
+	Use:   "show <ticket-id>",
 	Short: "Show detailed ticket information",
 	Long: `Show detailed information about a specific ticket.
 
-Specify the ticket using:
-  - Flag: cctx -t TICKET-123 ticket show
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket show`,
-	Args: cobra.NoArgs,
+Example:
+  cctx ticket show TICKET-123`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketShow,
 }
 
 func runTicketShow(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	ticketID := args[0]
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1144,7 +1153,7 @@ func runTicketShow(cmd *cobra.Command, args []string) error {
 
 // ticket complete subcommand
 var ticketCompleteCmd = &cobra.Command{
-	Use:   "complete",
+	Use:   "complete <ticket-id>",
 	Short: "Mark ticket as completed and auto-archive",
 	Long: `Mark a ticket as completed and automatically archive it.
 
@@ -1160,22 +1169,15 @@ Git info is auto-detected from your current directory:
   - Latest commit: stored in ticket commits
   - Override with --commits flag if needed
 
-Specify the ticket using:
-  - Flag: cctx -t TICKET-123 ticket complete
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket complete
-
 Examples:
-  # Auto-detect everything
-  cd /path/to/project && cctx -t TICKET-123 ticket complete
-
-  # Manual override
-  cctx -t TICKET-123 ticket complete --commits "abc123,def456" --prs "42,43"`,
-	Args: cobra.NoArgs,
+  cctx ticket complete TICKET-123
+  cctx ticket complete TICKET-123 --commits "abc123,def456" --prs "42,43"`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketComplete,
 }
 
 func runTicketComplete(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	ticketID := args[0]
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1320,8 +1322,14 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Move ticket to archived
-	archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+	// Move ticket to archived with unique name (handle existing archives)
+	baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+	archivedDir := baseArchivedDir
+	suffix := 1
+	for common.FileExists(archivedDir) {
+		archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
+		suffix++
+	}
 
 	if err := common.EnsureDir(archivedDir); err != nil {
 		return fmt.Errorf("failed to create archived directory: %w", err)
@@ -1425,19 +1433,19 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 
 // ticket abandon subcommand
 var ticketAbandonCmd = &cobra.Command{
-	Use:   "abandon",
+	Use:   "abandon <ticket-id>",
 	Short: "Mark ticket as abandoned",
 	Long: `Mark a ticket as abandoned with optional reason.
 
-Specify the ticket using:
-  - Flag: cctx -t TICKET-123 ticket abandon
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket abandon`,
-	Args: cobra.NoArgs,
+Example:
+  cctx ticket abandon TICKET-123
+  cctx ticket abandon TICKET-123 --reason "Requirements changed"`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketAbandon,
 }
 
 func runTicketAbandon(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	ticketID := args[0]
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1499,22 +1507,21 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 
 // ticket archive subcommand
 var ticketArchiveCmd = &cobra.Command{
-	Use:   "archive",
+	Use:   "archive <ticket-id>",
 	Short: "Archive completed/abandoned ticket",
 	Long: `Archive a completed or abandoned ticket.
 
 Moves ticket to archived directory, removes symlinks from all projects,
 and generates documentation for completed tickets.
 
-Specify the ticket using:
-  - Flag: cctx -t TICKET-123 ticket archive
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket archive`,
-	Args: cobra.NoArgs,
+Example:
+  cctx ticket archive TICKET-123`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketArchive,
 }
 
 func runTicketArchive(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	ticketID := args[0]
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1578,9 +1585,15 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Move ticket to archived
+	// Move ticket to archived with unique name (handle existing archives)
 	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+	baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+	archivedDir := baseArchivedDir
+	suffix := 1
+	for common.FileExists(archivedDir) {
+		archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
+		suffix++
+	}
 
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would move ticket to: %s", archivedDir))
@@ -1669,20 +1682,20 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 
 // ticket edit subcommand
 var ticketEditCmd = &cobra.Command{
-	Use:   "edit",
+	Use:   "edit <ticket-id>",
 	Short: "Edit ticket metadata",
 	Long: `Edit ticket metadata (title, tags, notes).
 
-Specify the ticket using:
-  - Flag: cctx -t TICKET-123 ticket edit --title "New title"
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket edit --title "New title"`,
-	Args: cobra.NoArgs,
+Example:
+  cctx ticket edit TICKET-123 --title "New title"
+  cctx ticket edit TICKET-123 --tags "bug,urgent" --notes "Updated requirements"`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketEdit,
 }
 
 // ticket delete subcommand
 var ticketDeleteCmd = &cobra.Command{
-	Use:   "delete [<ticket-id>]",
+	Use:   "delete <ticket-id>",
 	Short: "Permanently delete a ticket",
 	Long: `Permanently delete a ticket and all associated files.
 
@@ -1694,11 +1707,10 @@ This removes:
 
 This action cannot be undone.
 
-Specify the ticket using:
-  - Positional arg: cctx ticket delete TICKET-123
-  - Flag: cctx -t TICKET-123 ticket delete
-  - Env var: export CCTX_TICKET=TICKET-123 && cctx ticket delete`,
-	Args: cobra.MaximumNArgs(1),
+Example:
+  cctx ticket delete TICKET-123
+  cctx ticket delete TICKET-123 --force  # Skip confirmation`,
+	Args: cobra.ExactArgs(1),
 	RunE: runTicketDelete,
 }
 
@@ -1725,7 +1737,7 @@ Specify a project to archive only tickets linked to that project:
 }
 
 func runTicketEdit(cmd *cobra.Command, args []string) error {
-	ticketID := GetTicketIDOrExit()
+	ticketID := args[0]
 
 	// Check if any flags were provided
 	if ticketTitle == "" && ticketTags == "" && ticketNotes == "" {
@@ -1792,14 +1804,7 @@ func splitAndTrim(s string, sep string) []string {
 }
 
 func runTicketDelete(cmd *cobra.Command, args []string) error {
-	var ticketID string
-
-	// Get ticket ID from args or flag/env
-	if len(args) > 0 {
-		ticketID = args[0]
-	} else {
-		ticketID = GetTicketIDOrExit()
-	}
+	ticketID := args[0]
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -2165,10 +2170,16 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Move ticket directory to archived
+		// Move ticket directory to archived with unique name (handle existing archives)
 		ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-		archivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived",
+		baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived",
 			fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
+		archivedDir := baseArchivedDir
+		suffix := 1
+		for common.FileExists(archivedDir) {
+			archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
+			suffix++
+		}
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would move %s to archived", ticketID))

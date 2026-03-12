@@ -21,7 +21,14 @@
       "Bash(cctx ticket delete TEST-V2-FINAL --force)",
       "Bash(cd cli:*)",
       "Bash(go build:*)",
-      "Bash(/tmp/cctx-test global:*)"
+      "Bash(/tmp/cctx-test global:*)",
+      "Bash(/tmp/cctx-test ticket:*)",
+      "Bash(/tmp/cctx-test reset:*)",
+      "Bash(/tmp/cctx-test clean-project:*)",
+      "Bash(/tmp/cctx-test --help | grep -A 2 \"reset\\\\|clean\")",
+      "Bash(hash -r && cctx reset --help)",
+      "Bash(cctx reset:*)",
+      "Bash(cctx clean-project:*)"
     ]
   }
 }
