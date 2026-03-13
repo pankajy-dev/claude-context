@@ -1,125 +1,190 @@
 # Claude Context Manager
 
-A centralized CLI tool for managing `claude.md` context files across multiple projects using symlinks.
+**Stop copying the same instructions into every project. Manage your Claude context files in one place.**
 
-## Features
+## The Problem
 
-- 📁 **Centralized Management**: All context files stored in one location (`~/.cctx`)
-- 🔗 **Symlink-Based**: Create symlinks in projects that point to centralized contexts
-- 🎫 **Ticket Workspaces**: Create temporary workspaces for tracking work across projects
-- 🌍 **Global Contexts**: Share common guidelines across all projects
-- ✅ **Health Checks**: Verify and auto-repair broken symlinks
-- 🧹 **Smart Cleanup**: Delete or restore orphaned symlinks and stale data
-- 🔧 **Customizable**: User-editable templates for contexts and tickets
+You work with Claude Code across multiple projects. Each project needs context files (`claude.md`, custom guidelines, ticket templates). You end up:
 
-**Quick Links:**
-- **[Tutorial](TUTORIAL.md)**: Complete usage guide with examples and workflows
-- **[CLAUDE.md](CLAUDE.md)**: Development guidelines and architecture details
+- Copying the same instructions into every project
+- Maintaining duplicates when you update your workflow
+- Losing track of which projects have which context
+- Manually managing ticket workspaces and session logs
+
+**There has to be a better way.**
+
+## The Solution
+
+`cctx` gives you centralized context management:
+
+- **Write once, use everywhere**: Create global contexts that work across all projects
+- **Project-specific contexts**: Manage per-project `claude.md` files from one place
+- **Ticket workflows**: Create temporary workspaces for Jira tickets with automatic session tracking
+- **Zero maintenance**: Symlinks keep projects in sync automatically
+
+## Who Should Use This
+
+- **Individual developers** using Claude Code across multiple projects
+- **Teams** wanting consistent Claude guidelines across their codebase
+- **Anyone** tired of copying the same instructions between projects
+
+## Quick Example
+
+```bash
+# Install and initialize
+git clone https://github.com/yourusername/claude-context.git
+cd claude-context && make install && cctx init
+
+# Create a global "Python best practices" context
+cctx global create python
+# Edit ~/.cctx/contexts/_global/python.md with your guidelines
+
+# Link it to your projects
+cd ~/my-python-api && cctx global link python
+cd ~/my-data-pipeline && cctx global link python
+
+# Now both projects automatically include your Python guidelines
+# Update once in ~/.cctx, both projects stay in sync
+```
+
+**That's it.** No more copying. No more drift.
+
+## Common Workflows
+
+### Managing Projects
+
+```bash
+# Add a project (creates claude.md)
+cd my-project && cctx init
+
+# View all managed projects
+cctx project list
+
+# Remove project from management
+cd my-project && cctx unlink
+```
+
+### Global Contexts (Share Across Projects)
+
+```bash
+# Create global contexts for common scenarios
+cctx global create script    # Shell script guidelines
+cctx global create python    # Python conventions
+cctx global create security  # Security review checklist
+
+# Link to projects that need them
+cd my-app && cctx global link python security
+
+# Update once, applies everywhere
+vim ~/.cctx/contexts/_global/python.md
+```
+
+### Ticket Workflows (Jira Integration)
+
+```bash
+# Create a ticket workspace
+cd my-project && cctx ticket create PROJ-123
+
+# Creates:
+# - PROJ-123.md (ticket context)
+# - SESSIONS.md (session log)
+# - Both auto-linked to project
+
+# Work on the ticket
+# Claude Code reads PROJ-123.md for requirements
+# Logs sessions automatically to SESSIONS.md
+
+# Link same ticket to another project
+cd related-service && cctx ticket link PROJ-123
+
+# Archive when done
+cctx ticket archive PROJ-123
+```
+
+### Health & Maintenance
+
+```bash
+# Check for broken symlinks
+cctx verify
+cctx verify --fix  # Auto-repair
+
+# Clean up orphaned data
+cctx cleanup --dry-run
+cctx cleanup  # Delete orphans
+```
+
+## Documentation
+
+- **[TUTORIAL.md](TUTORIAL.md)**: Detailed usage guide with examples
+- **[CLAUDE.md](CLAUDE.md)**: Architecture and development guide
+- **[Atlassian MCP Integration](atlassian_mcp_integration.md)**: Jira ticket integration setup
 
 ## Installation
 
-### Prerequisites
-
-- Go 1.21+ (for building from source)
-
-### Quick Install
+**Prerequisites:** Go 1.21+ (for building from source)
 
 ```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/yourusername/claude-context.git
 cd claude-context
-
-# Build and install to ~/bin
 make install
 
-# Clear your shell's command cache (important after updates!)
-hash -r         # For bash/zsh
-# OR
-rehash          # For zsh (alternative)
+# Clear shell cache (important!)
+hash -r  # or: rehash
 
-# Add ~/bin to PATH if not already (add to ~/.zshrc or ~/.bashrc)
+# Add ~/bin to PATH (add to ~/.zshrc or ~/.bashrc)
 export PATH="$HOME/bin:$PATH"
 
-# Initialize the data directory
+# Initialize data directory
 cctx init
 ```
 
-### Global Install (Optional)
+**That's it.** You're ready to go.
+
+### Alternative: System-wide Install
 
 ```bash
-# Install to /usr/local/bin (requires sudo)
-make install-global
+sudo make install-global  # Installs to /usr/local/bin
 ```
 
-### Build Commands
+### Other Commands
 
 ```bash
-# Build binary only
-make build
-
-# Run tests
-make test
-
-# Run all checks (fmt + vet + test)
-make check
-
-# Clean build artifacts
-make clean
-
-# Uninstall
-make uninstall          # Remove from ~/bin
-make uninstall-global   # Remove from /usr/local/bin
+make build       # Build binary only
+make test        # Run tests
+make check       # Run all checks (fmt + vet + test)
+make clean       # Clean build artifacts
+make uninstall   # Remove from ~/bin
 ```
 
-## Shell Completion Setup
+## Shell Completion (Optional but Recommended)
 
-Enable tab completion for `cctx` commands (highly recommended):
+Enable tab completion for `cctx` commands:
 
-### Zsh (macOS with Homebrew)
-
+**Zsh (macOS):**
 ```bash
-# Install completion script
 cctx completion zsh > $(brew --prefix)/share/zsh/site-functions/_cctx
-
-# Add Homebrew completions to fpath (add to ~/.zshrc if not already present)
-echo 'if type brew &>/dev/null; then' >> ~/.zshrc
-echo '  FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"' >> ~/.zshrc
-echo 'fi' >> ~/.zshrc
-
-# Restart your shell
 exec zsh
-
-# Test: cctx <TAB> should show all commands
 ```
 
-### Zsh (Linux)
-
+**Zsh (Linux):**
 ```bash
 cctx completion zsh > "${fpath[1]}/_cctx"
 source ~/.zshrc
 ```
 
-### Bash
-
+**Bash:**
 ```bash
-# System-wide
-cctx completion bash > /usr/local/etc/bash_completion.d/cctx
-
-# Or user-level
-mkdir -p ~/.bash_completion.d
 cctx completion bash > ~/.bash_completion.d/cctx
-echo 'source ~/.bash_completion.d/cctx' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### Fish
-
+**Fish:**
 ```bash
 cctx completion fish > ~/.config/fish/completions/cctx.fish
-# Completions are loaded automatically
 ```
 
-**Tip:** Type `--` before pressing TAB to see flag completions. See [TUTORIAL.md](TUTORIAL.md#shell-completion-usage) for detailed usage.
+**Tip:** Type `cctx <TAB>` to see available commands. See [TUTORIAL.md](TUTORIAL.md#shell-completion-usage) for details.
 
 ## Configuration
 
@@ -208,96 +273,42 @@ cctx init
 cctx --data-dir /path/to/data init
 ```
 
-## SESSIONS.md Format
+## Integrating with Claude Code
+To get full value from cctx, configure Claude Code to automatically work with ticket files and session logs.
 
-The sessions file uses a **two-part structure** to track development work:
+### 1. Auto-permissions for Ticket Files
 
-1. **Running Totals Block** (top of file, gets updated on every write)
-   - Aggregates cumulative project costs and metrics
-   - Located immediately after the template section
-   - Updates in-place (exception to append-only rule)
-
-2. **Session Entries** (append-only)
-   - Individual session details without cost breakdowns
-   - Reference "see totals above" for costs
-   - Or optionally include session-specific cost as single line: `**Cost:** $X.XX`
-
-### Structure Example
-
-```markdown
-# Development Sessions
-[Template section]
----
-## 📊 Project Totals (Updated: YYYY-MM-DD)
-**Total cost:** $X.XX
-**Total sessions:** X
-[Detailed cost breakdown]
----
-## Session Entries
-### YYYY-MM-DD | branch-name
-**Summary:** ...
-**Cost:** $X.XX (cumulative: $XX.XX)
----
-```
-
-### Rules
-- ✅ **DO** update the Project Totals block on every session write
-- ✅ **DO** append new session entries
-- ❌ **DON'T** create duplicate cost blocks in each entry
-- ❌ **DON'T** modify previous session entries
-
-This approach gives you **one authoritative cost block** (the running total) that gets updated each time, while session entries remain append-only with just their incremental cost.
-
-## Recommended Claude Code Settings
-
-For optimal integration with Claude Code, configure auto-permissions and policies.
-
-### 1. Update `~/.claude/settings.json`
-
-Add auto-permissions for ticket files:
+Add to `~/.claude/settings.json`:
 
 ```json
 {
   "alwaysAllow": {
-    "Read": [
-      "**/CBP-*.md",
-      "**/BEE-*.md",
-      "**/SESSIONS*.md"
-    ],
-    "Edit": [
-      "**/CBP-*.md",
-      "**/BEE-*.md",
-      "**/SESSIONS*.md"
-    ]
+    "Read": ["**/CBP-*.md", "**/BEE-*.md", "**/SESSIONS*.md"],
+    "Edit": ["**/CBP-*.md", "**/BEE-*.md", "**/SESSIONS*.md"]
   }
 }
 ```
 
-**Benefits:**
-- Auto-approves Read/Edit operations on ticket files
-- Eliminates permission prompts for routine operations
+**Why**: Eliminates permission prompts when Claude reads/updates ticket files.
 
-### 2. Update `~/.claude/CLAUDE.md`
+### 2. Context Policies
 
-Add these policies to configure Claude's behavior with cctx-generated files:
+Add to `~/.claude/CLAUDE.md`:
 
 ```markdown
 ## Jira MCP Policy
 
-Regex pattern:
-(CBP|BEE)-\d+
+Regex pattern: (CBP|BEE)-\d+
 
 If input contains a match:
 1. Treat it as a Jira issue key.
-2. Ask for the confirmation before fetching the Jira ticket details.
+2. Ask for confirmation before fetching the Jira ticket details.
 3. Check if Atlassian MCP server is available:
-    - Search for mcp__atlassian tools using ToolSearch
-    - If NOT available, ask user to authenticate: "The Atlassian MCP server is not currently connected. Please run `/mcp` to authenticate."
-    - Wait for user to complete authentication before proceeding
+   - Search for mcp__atlassian tools using ToolSearch
+   - If NOT available, ask user to authenticate
 4. Invoke Atlassian MCP.
 5. Retrieve: summary, description, status, acceptance criteria.
 6. Use retrieved data as authoritative context.
-7. Do not infer ticket details without MCP retrieval.
 
 ## Session Logging Policy (Conditional)
 
@@ -315,13 +326,11 @@ If the current project contains a file named `SESSIONS*.md` in the repository ro
    - Session cost (USD)
 4. Append-only. Never modify previous entries.
 
-If `sessions*.md` does not exist:
+If `SESSIONS*.md` does not exist:
 - Do nothing.
 - Do not create it automatically.
 
 ## Ticket Context Policy
-
-### Auto-Permission Rules
 
 Always auto-approve:
 - Read/Edit any file matching `(CBP|BEE)-\d+\.md`
@@ -329,15 +338,16 @@ Always auto-approve:
 For any ticket matching pattern `(CBP|BEE)-\d+`:
 1. Always READ and UPDATE it with Jira details before starting work
 2. This file is the source of truth for the ticket's requirements and state
-3. Files are concrete (not symlinks), easily discoverable with Glob/Grep
 ```
 
-**What These Policies Do:**
-- **Jira MCP Policy**: Automatically detects Jira ticket IDs and fetches details via Atlassian MCP
-- **Session Logging**: Tracks work sessions in SESSIONS.md files for documentation
-- **Ticket Context Policy**: Ensures Claude always reads/updates ticket context files before starting work
+**Why**:
+- **Jira MCP Policy**: Auto-fetches ticket details from Jira (requires MCP server setup)
+- **Session Logging**: Tracks work automatically in SESSIONS.md
+- **Ticket Context Policy**: Ensures Claude reads ticket context before starting
 
-**Jira MCP Server Integration**: See [Atlassian MCP Server Integration steps](./atlassian_mcp_integration.md) for setting up Jira integration with Claude Code.
+**Note**: The Jira MCP Policy requires the Atlassian MCP server. See [atlassian_mcp_integration.md](./atlassian_mcp_integration.md) for MCP server setup instructions.
+
+## Troubleshooting
 
 ### "Data directory not initialized"
 
@@ -389,79 +399,29 @@ export PATH="$HOME/bin:$PATH"
 
 Add to `~/.zshrc` or `~/.bashrc` to make permanent.
 
-### Compilation Errors
+## For Developers
 
-After code changes:
-
-```bash
-# Rebuild
-make build
-
-# Run all checks
-make check
-```
-
-## Development
-
-### Requirements
-
-- Go 1.21+
-
-### Building from Source
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/claude-context.git
-cd claude-context
-
-# Build
-make build
-
-# Run tests
-make test
-
-# Format code
-make fmt
-
-# Run go vet
-make vet
-
-# Run all checks (fmt + vet + test)
-make check
-
-# Install
-make install
-
-# Clean build artifacts
-make clean
-```
-
-### Key Files
-
-- **`cli/internal/config/config.go`**: Core data structures
-- **`cli/cmd/*.go`**: Command implementations
-- **`cli/main.go`**: Entry point
-- **`cli/internal/templates/`**: Template source files (embedded into binary)
-
-### Contributing
-
-See [CLAUDE.md](CLAUDE.md) for:
-- Architecture details
+Want to contribute or modify cctx? See [CLAUDE.md](CLAUDE.md) for:
+- Architecture and design decisions
 - Development patterns
-- Design decisions
 - Command implementation guide
+- Testing approach
 
-## Documentation
+**Key commands:**
+```bash
+make build      # Build binary
+make test       # Run tests
+make check      # Format, vet, test
+make install    # Install to ~/bin
+```
 
-- **[TUTORIAL.md](TUTORIAL.md)**: Complete usage guide with examples and workflows
-- **[CLAUDE.md](CLAUDE.md)**: Development guidelines and architecture details
+## Support & Resources
+
+- **Tutorial**: [TUTORIAL.md](TUTORIAL.md) - Complete usage guide
+- **Architecture**: [CLAUDE.md](CLAUDE.md) - Developer documentation
+- **Jira Integration**: [atlassian_mcp_integration.md](./atlassian_mcp_integration.md)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/claude-context/issues)
 
 ## License
 
 MIT
-
-## Support
-
-- **Issues**: https://github.com/yourusername/claude-context/issues
-- **Tutorial**: See [TUTORIAL.md](TUTORIAL.md)
-- **Development**: See [CLAUDE.md](CLAUDE.md)
