@@ -90,16 +90,31 @@ cd my-project && cctx ticket create PROJ-123
 # - SESSIONS.md (session log)
 # - Both auto-linked to project
 
-# Work on the ticket
-# Claude Code reads PROJ-123.md for requirements
-# Logs sessions automatically to SESSIONS.md
-
 # Link same ticket to another project
 cd related-service && cctx ticket link PROJ-123
 
 # Archive when done
 cctx ticket archive PROJ-123
 ```
+
+**After setup (see [Integrating with Claude Code](#integrating-with-claude-code))**, working on tickets becomes incredibly simple:
+
+```bash
+cd my-project
+git checkout -b BEE-1234
+cctx ticket create
+# Just tell Claude:
+"Let's work on the ticket"
+```
+
+That's it. Claude will:
+1. Auto-detect the ticket ID (from branch name, files, or context)
+2. Fetch full Jira details via MCP
+3. Update BEe-1234.md with requirements
+4. Start working on the ticket
+5. Log the session to SESSIONS.md automatically
+
+**No manual copy-pasting. No context switching. Just work.**
 
 ### Health & Maintenance
 
