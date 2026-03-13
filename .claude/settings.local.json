@@ -28,7 +28,14 @@
       "Bash(/tmp/cctx-test --help | grep -A 2 \"reset\\\\|clean\")",
       "Bash(hash -r && cctx reset --help)",
       "Bash(cctx reset:*)",
-      "Bash(cctx clean-project:*)"
+      "Bash(cctx clean-project:*)",
+      "Bash(grep -n 'filepath.Join\\(ticketDir, \"ticket.md\"\\)' /Users/pyadav/all/workspace/codebase/pankaj/claude-context/cli/cmd/ticket.go)",
+      "Bash(grep -n 'filepath.Join.*\"ticket.md\"' /Users/pyadav/all/workspace/codebase/pankaj/claude-context/cli/cmd/*.go)",
+      "Read(//private/tmp/test-ticket-naming/**)",
+      "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx ticket:*)",
+      "Read(//private/tmp/test-reset-all/proj1/**)",
+      "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx --data-dir /tmp/test-reset-data2 init)",
+      "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx --data-dir /tmp/test-reset-data2 ticket create TEST-999)"
     ]
   }
 }

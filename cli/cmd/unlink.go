@@ -222,7 +222,7 @@ func promoteSecondaryToPrimary(ticket *config.Ticket, cfg *config.Config, dataDi
 
 		// Update data dir symlink to point to new primary
 		ticketDir := filepath.Join(dataDir, "contexts/_tickets", ticket.TicketID)
-		dataTicketFile := filepath.Join(ticketDir, "ticket.md")
+		dataTicketFile := filepath.Join(ticketDir, ticket.TicketID+".md")
 		if common.IsSymlink(dataTicketFile) {
 			common.RemoveSymlink(dataTicketFile)
 		}

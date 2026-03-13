@@ -62,6 +62,9 @@ cctx project list
 
 # Remove project from management
 cd my-project && cctx unlink
+
+# Complete cleanup: remove all files, directories, and config entries
+cd my-project && cctx reset project
 ```
 
 ### Global Contexts (Share Across Projects)
@@ -126,6 +129,34 @@ cctx verify --fix  # Auto-repair
 # Clean up orphaned data
 cctx cleanup --dry-run
 cctx cleanup  # Delete orphans
+```
+
+### Reset & Complete Cleanup
+
+```bash
+# Reset a single project (removes everything)
+cctx reset project my-project
+# Removes:
+# - All files from project directory (symlinks, tickets, .clauderc)
+# - Project context from ~/.cctx/contexts/my-project/
+# - Related ticket directories
+# - Project entry from config.json (if registered)
+# - All ticket linkages
+
+# Clean up current directory (even if not registered)
+cd some-project && cctx reset project
+# Works even if project isn't in config.json
+# Cleans up any cctx-managed files (tickets, symlinks, .clauderc)
+
+# Reset all projects (nuclear option)
+cctx reset all
+# Removes all files from all projects + entire ~/.cctx directory
+
+# Keep config but remove all contexts
+cctx reset all --keep-config
+
+# Preview changes first (always recommended)
+cctx reset project --dry-run -v
 ```
 
 ## Documentation

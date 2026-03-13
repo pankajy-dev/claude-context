@@ -342,7 +342,7 @@ func updateSymlinks(dataDir string) error {
 	for _, ticket := range cfg.Tickets.Active {
 		for _, linkedProj := range ticket.LinkedProjects {
 			ticketSymlink := filepath.Join(linkedProj.ProjectPath, fmt.Sprintf("ticket-%s.md", ticket.TicketID))
-			ticketPath := filepath.Join(dataDir, "contexts", "_tickets", ticket.TicketID, "ticket.md")
+			ticketPath := filepath.Join(dataDir, "contexts", "_tickets", ticket.TicketID, ticket.TicketID+".md")
 
 			if common.FileExists(ticketPath) {
 				os.Remove(ticketSymlink)

@@ -201,7 +201,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 
 			// Check if ticket symlink exists
 			ticketFile := filepath.Join(project.ProjectPath, ticket.TicketID+".md")
-			ticketTarget := filepath.Join(dataDir, "contexts", "_tickets", ticket.TicketID, "ticket.md")
+			ticketTarget := filepath.Join(dataDir, "contexts", "_tickets", ticket.TicketID, ticket.TicketID+".md")
 
 			if !common.FileExists(ticketFile) {
 				issues = append(issues, verifyIssue{
@@ -484,7 +484,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 					case "1":
 						// Recreate symlink
 						ticketFile := filepath.Join(project.ProjectPath, ticketID+".md")
-						ticketTarget := filepath.Join(dataDir, "contexts", "_tickets", ticketID, "ticket.md")
+						ticketTarget := filepath.Join(dataDir, "contexts", "_tickets", ticketID, ticketID+".md")
 
 						// Remove existing if wrong
 						if common.FileExists(ticketFile) {

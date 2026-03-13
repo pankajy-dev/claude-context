@@ -468,7 +468,7 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 
 			// Create symlinks in data dir pointing to concrete files (if not already in data dir)
-			dataDirTicketFile := filepath.Join(ticketDir, "ticket.md")
+			dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
 			dataDirSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 
 			if concreteTicketFile != dataDirTicketFile {
@@ -593,7 +593,7 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ticket is not active (status: %s)", ticket.Status)
 	}
 
-	ticketFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "ticket.md")
+	ticketFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, ticketID+".md")
 
 	// Set primary context if not set
 	if ticket.PrimaryContextName == "" && len(projectNames) > 0 {
@@ -838,7 +838,7 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 				if common.FileExists(ticketFilePath) {
 					// Move concrete file back to data dir before deleting
 					ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-					dataDirTicketFile := filepath.Join(ticketDir, "ticket.md")
+					dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
 					dataDirSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 
 					// Remove data dir symlinks first
@@ -1344,7 +1344,7 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 
 			// Copy concrete files to archive
 			if common.FileExists(primaryTicketFile) {
-				if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, "ticket.md")); err != nil {
+				if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
 					warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
 				} else {
 					successMsg("Copied ticket file to archive")
@@ -1373,7 +1373,7 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 			}
 
 			// Remove symlinks from data dir
-			dataTicketFile := filepath.Join(ticketDir, "ticket.md")
+			dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
 			dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 			common.RemoveSymlink(dataTicketFile)
 			common.RemoveSymlink(dataSessionsFile)
@@ -1611,7 +1611,7 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 
 				// Copy concrete files to archive
 				if common.FileExists(primaryTicketFile) {
-					if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, "ticket.md")); err != nil {
+					if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil{
 						warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
 					} else {
 						successMsg("Copied ticket file to archive")
@@ -1630,7 +1630,7 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 				}
 
 				// Remove symlinks from data dir
-				dataTicketFile := filepath.Join(ticketDir, "ticket.md")
+				dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
 				dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 				common.RemoveSymlink(dataTicketFile)
 				common.RemoveSymlink(dataSessionsFile)
