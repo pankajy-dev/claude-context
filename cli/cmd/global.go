@@ -24,6 +24,7 @@ var (
 	globalTitle             string
 	globalDescription       string
 	globalAddExisting       bool
+	globalFromTemplate      bool
 	globalKeepFile          bool
 	globalLinkAll           bool
 	globalTemplatesResetAll bool
@@ -180,6 +181,7 @@ func init() {
 	globalInitCmd.Flags().StringVar(&globalTitle, "title", "", "Human-readable title")
 	globalInitCmd.Flags().StringVar(&globalDescription, "description", "", "Description of the global context")
 	globalInitCmd.Flags().BoolVar(&globalAddExisting, "add-to-existing", false, "Add to existing projects immediately")
+	globalInitCmd.Flags().BoolVar(&globalFromTemplate, "from-template", false, "Use template from ~/.cctx/templates/<name>.md if available")
 
 	// global list
 	globalCmd.AddCommand(globalListCmd)
@@ -256,19 +258,44 @@ func runGlobalInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Create global context file from template
-		template := fmt.Sprintf("# Global Context: %s\n\n", name)
-		if globalTitle != "" {
-			template = fmt.Sprintf("# %s\n\n", globalTitle)
-		}
-		if globalDescription != "" {
-			template += fmt.Sprintf("## Description\n\n%s\n\n", globalDescription)
-		}
-		template += "## Standards\n\n[Add your standards and preferences here]\n\n"
+		var content string
 
-		if err := os.WriteFile(globalFile, []byte(template), 0644); err != nil {
+		// Check if --from-template flag is set and template exists
+		if globalFromTemplate {
+			templateContent, source, err := templates.GetTemplate(name, dataDir)
+			if err != nil {
+				warningMsg(fmt.Sprintf("Template '%s' not found, using default format", name))
+				infoMsg("Available templates: use 'cctx global templates list' to see all")
+			} else {
+				content = string(templateContent)
+				if source == "user" {
+					successMsg(fmt.Sprintf("Using template from ~/.cctx/templates/%s.md", name))
+				} else {
+					successMsg(fmt.Sprintf("Using embedded template: %s", name))
+				}
+			}
+		}
+
+		// If no template content, create basic format
+		if content == "" {
+			template := fmt.Sprintf("# Global Context: %s\n\n", name)
+			if globalTitle != "" {
+				template = fmt.Sprintf("# %s\n\n", globalTitle)
+			}
+			if globalDescription != "" {
+				template += fmt.Sprintf("## Description\n\n%s\n\n", globalDescription)
+			}
+			template += "## Standards\n\n[Add your standards and preferences here]\n\n"
+			content = template
+		}
+
+		if err := os.WriteFile(globalFile, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to create global context file: %w", err)
 		}
-		successMsg("Created global context file")
+
+		if !globalFromTemplate || content == "" {
+			successMsg("Created global context file")
+		}
 
 		// Add to config
 		gc := config.GlobalContext{
