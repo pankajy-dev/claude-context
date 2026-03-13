@@ -35,7 +35,12 @@
       "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx ticket:*)",
       "Read(//private/tmp/test-reset-all/proj1/**)",
       "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx --data-dir /tmp/test-reset-data2 init)",
-      "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx --data-dir /tmp/test-reset-data2 ticket create TEST-999)"
+      "Bash(/Users/pyadav/all/workspace/codebase/pankaj/claude-context/cctx --data-dir /tmp/test-reset-data2 ticket create TEST-999)",
+      "Bash(cctx global:*)",
+      "Bash(cctx list:*)",
+      "Bash(ls -la /Users/pyadav/all/workspace/codebase/repositories/platform/other/actions/jfrog-pipeline-actions/*.md)",
+      "Bash(cctx link:*)",
+      "Bash(make test-global:*)"
     ]
   }
 }

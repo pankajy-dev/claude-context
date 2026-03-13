@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/pankaj/claude-context/internal/clauderc"
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
 	"github.com/pankaj/claude-context/internal/templates"
@@ -651,10 +652,17 @@ func runGlobalLink(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("%s: would create symlink", projectName))
+			dryRunMsg(fmt.Sprintf("%s: would add %s.md to .clauderc", projectName, globalName))
 		} else {
 			if err := common.CreateSymlink(globalFile, projectGlobal); err != nil {
 				warningMsg(fmt.Sprintf("%s: failed to create symlink: %v", projectName, err))
 				continue
+			}
+
+			// Update .clauderc to include the global context file
+			rcMgr := clauderc.NewManager(project.ProjectPath)
+			if err := rcMgr.AddFile(globalName+".md", false); err != nil {
+				warningMsg(fmt.Sprintf("%s: failed to update .clauderc: %v", projectName, err))
 			}
 
 			// Add to project's linked_globals
@@ -760,12 +768,19 @@ func runGlobalUnlink(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("%s: would remove symlink", projectName))
+			dryRunMsg(fmt.Sprintf("%s: would remove %s.md from .clauderc", projectName, globalName))
 		} else {
 			if common.FileExists(projectGlobal) || common.IsSymlink(projectGlobal) {
 				if err := os.Remove(projectGlobal); err != nil {
 					warningMsg(fmt.Sprintf("%s: failed to remove symlink: %v", projectName, err))
 					continue
 				}
+			}
+
+			// Update .clauderc to remove the global context file
+			rcMgr := clauderc.NewManager(project.ProjectPath)
+			if err := rcMgr.RemoveFile(globalName+".md", false); err != nil {
+				warningMsg(fmt.Sprintf("%s: failed to update .clauderc: %v", projectName, err))
 			}
 
 			// Remove from project's linked_globals
