@@ -41,7 +41,8 @@
       "Bash(ls -la /Users/pyadav/all/workspace/codebase/repositories/platform/other/actions/jfrog-pipeline-actions/*.md)",
       "Bash(cctx link:*)",
       "Bash(make test-global:*)",
-      "Bash(ls -la /Users/pyadav/all/workspace/codebase/repositories/platform/other/actions/jenkins-actions/*.md)"
+      "Bash(ls -la /Users/pyadav/all/workspace/codebase/repositories/platform/other/actions/jenkins-actions/*.md)",
+      "Bash(cctx verify:*)"
     ]
   }
 }

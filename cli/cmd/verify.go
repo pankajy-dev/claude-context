@@ -330,34 +330,46 @@ func runVerify(cmd *cobra.Command, args []string) error {
 			}
 
 			switch issue.issueType {
-			case "missing-symlink", "wrong-target", "broken-symlink":
-				// Recreate context symlink
+			case "missing-file":
+				// Create missing concrete file in project directory
+				contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
+				claudeMD := filepath.Join(project.ProjectPath, contextFileName)
+
+				if !dryRun {
+					// Create concrete file in project directory
+					if err := os.WriteFile(claudeMD, []byte(fmt.Sprintf("# %s\n\n", project.ContextName)), 0644); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create %s for %s: %v", contextFileName, issue.project, err))
+						continue
+					}
+					successMsg(fmt.Sprintf("Created %s for %s", contextFileName, issue.project))
+					fixed++
+				} else {
+					dryRunMsg(fmt.Sprintf("Would create %s for %s", contextFileName, issue.project))
+				}
+
+			case "missing-data-symlink", "wrong-target":
+				// Create/fix symlink in data directory pointing to project file
 				contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
 				claudeMD := filepath.Join(project.ProjectPath, contextFileName)
 				contextFile := filepath.Join(dataDir, project.ContextPath)
 
-				// Ensure context file exists
-				contextDir := filepath.Dir(contextFile)
 				if !dryRun {
+					// Ensure data directory exists
+					contextDir := filepath.Dir(contextFile)
 					if err := common.EnsureDir(contextDir); err != nil {
 						warningMsg(fmt.Sprintf("Failed to create context dir for %s: %v", issue.project, err))
 						continue
 					}
-					if !common.FileExists(contextFile) {
-						// Create empty context file
-						if err := os.WriteFile(contextFile, []byte(fmt.Sprintf("# %s\n\n", project.ContextName)), 0644); err != nil {
-							warningMsg(fmt.Sprintf("Failed to create context file for %s: %v", issue.project, err))
-							continue
-						}
-					}
-					if err := common.CreateSymlink(contextFile, claudeMD); err != nil {
-						warningMsg(fmt.Sprintf("Failed to fix symlink for %s: %v", issue.project, err))
+
+					// Create symlink in data directory pointing to project file
+					if err := common.CreateSymlink(claudeMD, contextFile); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create data symlink for %s: %v", issue.project, err))
 						continue
 					}
-					successMsg(fmt.Sprintf("Fixed %s symlink for %s", contextFileName, issue.project))
+					successMsg(fmt.Sprintf("Created data directory symlink for %s", issue.project))
 					fixed++
 				} else {
-					dryRunMsg(fmt.Sprintf("Would fix %s symlink for %s", contextFileName, issue.project))
+					dryRunMsg(fmt.Sprintf("Would create data symlink for %s", issue.project))
 				}
 
 			case "missing-context":

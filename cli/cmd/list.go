@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/pankaj/claude-context/internal/common"
@@ -54,18 +55,23 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// List projects
 	for _, project := range cfg.ManagedProjects {
-		// Check symlink status
-		claudeMD := fmt.Sprintf("%s/claude.md", project.ProjectPath)
+		// Check if project directory exists
 		status := "✓"
 		statusText := "OK"
 
-		if !common.IsSymlink(claudeMD) {
+		if !common.DirExists(project.ProjectPath) {
 			status = "✗"
 			statusText = "BROKEN"
 		} else {
-			// Check if target exists
-			target, err := common.SymlinkTarget(claudeMD)
-			if err != nil || !common.FileExists(target) {
+			// Check context file (should be concrete file in project)
+			contextFileName := filepath.Base(project.ContextPath) // e.g., "CLAUDE.md" or "claude.md"
+			claudeMD := filepath.Join(project.ProjectPath, contextFileName)
+
+			if !common.FileExists(claudeMD) {
+				status = "✗"
+				statusText = "BROKEN"
+			} else if common.IsSymlink(claudeMD) {
+				// Project file should be concrete, not symlink
 				status = "✗"
 				statusText = "BROKEN"
 			}
