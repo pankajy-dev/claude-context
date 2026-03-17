@@ -1249,17 +1249,12 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Save config first (before archiving)
-	if err := cfgMgr.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
 	fmt.Println()
-	successMsg(fmt.Sprintf("Ticket %s marked as completed", ticketID))
+	infoMsg(fmt.Sprintf("Marking ticket %s as completed and archiving...", ticketID))
 
 	// Auto-archive: Remove symlinks from all linked projects
 	fmt.Println()
-	infoMsg("Auto-archiving ticket (removing from projects)...")
+	infoMsg("Removing symlinks from projects...")
 
 	for _, lp := range ticket.LinkedProjects {
 		project := cfg.GetProject(lp.ContextName)
@@ -1391,6 +1386,8 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update config: move from active to archived
+	// NOTE: We only save config once at the end to ensure atomicity.
+	// If archiving fails, we don't want to persist a partially completed state.
 	ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s", time.Now().Format("2006-01-02"), ticketID)
 
 	// Remove from active tickets
@@ -1405,6 +1402,12 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	// Add to archived tickets
 	cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
 
+	// Remove from working tickets if present
+	if cfg.IsCurrentlyWorking(ticketID) {
+		cfg.RemoveCurrentWorkingTicket(ticketID)
+	}
+
+	// Save config once at the end after all operations complete
 	if err := cfgMgr.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -1418,14 +1421,6 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	}
 	if branch != "" {
 		infoMsg(fmt.Sprintf("Branch: %s", branch))
-	}
-
-	// Remove from working tickets if present
-	if cfg.IsCurrentlyWorking(ticketID) {
-		cfg.RemoveCurrentWorkingTicket(ticketID)
-		if err := cfgMgr.Save(cfg); err != nil {
-			warningMsg(fmt.Sprintf("Failed to remove from working tickets: %v", err))
-		}
 	}
 
 	return nil
