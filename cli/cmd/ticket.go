@@ -485,6 +485,54 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
+	} else {
+		// Linking to existing ticket - create symlinks to primary project's concrete files
+		if dryRun {
+			dryRunMsg(fmt.Sprintf("Would create symlink: %s", concreteTicketFile))
+		} else {
+			existingTicket := cfg.GetTicket(ticketID, true)
+			if existingTicket == nil {
+				return fmt.Errorf("existing ticket not found: %s", ticketID)
+			}
+
+			// Determine target based on primary project
+			var ticketTarget, sessionsTarget string
+			if existingTicket.PrimaryContextName != "" {
+				primaryProject := cfg.GetProject(existingTicket.PrimaryContextName)
+				if primaryProject != nil && common.FileExists(filepath.Join(primaryProject.ProjectPath, ticketID+".md")) {
+					ticketTarget = filepath.Join(primaryProject.ProjectPath, ticketID+".md")
+					sessionsTarget = filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
+				}
+			}
+
+			// Fallback to data dir if primary not accessible
+			if ticketTarget == "" {
+				ticketFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, ticketID+".md")
+				if common.FileExists(ticketFile) {
+					ticketTarget = ticketFile
+					sessionsTarget = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "SESSIONS.md")
+				}
+			}
+
+			if ticketTarget == "" {
+				return fmt.Errorf("could not find ticket files for: %s", ticketID)
+			}
+
+			// Create symlink to ticket file
+			if err := common.CreateSymlink(ticketTarget, concreteTicketFile); err != nil {
+				return fmt.Errorf("failed to create symlink: %w", err)
+			}
+			successMsg(fmt.Sprintf("Created symlink: %s", concreteTicketFile))
+
+			// Create symlink to sessions file if it exists
+			if common.FileExists(sessionsTarget) {
+				if err := common.CreateSymlink(sessionsTarget, concreteSessionsFile); err != nil {
+					warningMsg(fmt.Sprintf("Failed to create sessions symlink: %v", err))
+				} else {
+					successMsg(fmt.Sprintf("Created sessions symlink: %s", concreteSessionsFile))
+				}
+			}
+		}
 	}
 
 	// V2: Concrete files already created in current directory
@@ -1326,12 +1374,12 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		suffix++
 	}
 
-	if err := common.EnsureDir(archivedDir); err != nil {
-		return fmt.Errorf("failed to create archived directory: %w", err)
-	}
-
 	// Copy concrete files from primary project to archive
 	if ticket.PrimaryContextName != "" {
+		// V2 Architecture: copy files, so create directory first
+		if err := common.EnsureDir(archivedDir); err != nil {
+			return fmt.Errorf("failed to create archived directory: %w", err)
+		}
 		primaryProject := cfg.GetProject(ticket.PrimaryContextName)
 		if primaryProject != nil {
 			primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
@@ -1378,7 +1426,13 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 			successMsg("Moved ticket to archived")
 		}
 	} else {
-		// No primary - move entire directory
+		// V1 Architecture: move entire directory
+		// Ensure parent _archived directory exists
+		archivedParent := filepath.Join(cfgMgr.GetContextsPath(), "_archived")
+		if err := common.EnsureDir(archivedParent); err != nil {
+			return fmt.Errorf("failed to create archived parent directory: %w", err)
+		}
+
 		if err := os.Rename(ticketDir, archivedDir); err != nil {
 			return fmt.Errorf("failed to move ticket to archived: %w", err)
 		}
