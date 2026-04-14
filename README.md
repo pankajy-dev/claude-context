@@ -384,6 +384,7 @@ Always auto-approve:
 For any ticket matching pattern `(CBP|BEE)-\d+`:
 1. Always READ and UPDATE it with Jira details before starting work
 2. This file is the source of truth for the ticket's requirements and state
+3. Always confirm to checkout a new branch before making change on any repository, mostly in the format of `CBP-1234` or `BEE-1234`
 ```
 
 **Why**:

@@ -1311,12 +1311,22 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		}
 
 		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+		sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
 
 		if common.FileExists(symlinkPath) {
 			if err := common.RemoveSymlink(symlinkPath); err != nil {
 				warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
 			} else {
 				successMsg(fmt.Sprintf("Removed symlink from %s", lp.ContextName))
+			}
+		}
+
+		// Remove SESSIONS.md symlink if it exists
+		if common.FileExists(sessionsSymlinkPath) {
+			if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
+				warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
+			} else {
+				successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 			}
 		}
 
@@ -1613,9 +1623,11 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		}
 
 		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+		sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would remove symlink from %s", lp.ContextName))
+			dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md from %s", lp.ContextName))
 			dryRunMsg(fmt.Sprintf("Would remove from .clauderc"))
 		} else {
 			if common.FileExists(symlinkPath) {
@@ -1623,6 +1635,15 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 					warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
 				} else {
 					successMsg(fmt.Sprintf("Removed symlink from %s", lp.ContextName))
+				}
+			}
+
+			// Remove SESSIONS.md symlink if it exists
+			if common.FileExists(sessionsSymlinkPath) {
+				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
+					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
+				} else {
+					successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 				}
 			}
 
@@ -2199,15 +2220,26 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 			}
 
 			symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
+			sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
 
 			if dryRun {
 				dryRunMsg(fmt.Sprintf("Would remove symlink from %s: %s", lp.ContextName, ticketID))
+				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md from %s", lp.ContextName))
 			} else {
 				if common.FileExists(symlinkPath) {
 					if err := common.RemoveSymlink(symlinkPath); err != nil {
 						warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
 					} else if verbose {
 						successMsg(fmt.Sprintf("Removed %s symlink from %s", ticketID, lp.ContextName))
+					}
+				}
+
+				// Remove SESSIONS.md symlink if it exists
+				if common.FileExists(sessionsSymlinkPath) {
+					if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
+						warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
+					} else if verbose {
+						successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 					}
 				}
 
