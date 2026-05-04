@@ -1304,26 +1304,67 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	infoMsg("Removing symlinks from projects...")
 
-	for _, lp := range ticket.LinkedProjects {
+	// Build list of projects to clean up
+	// If linked_projects is null/empty, scan all managed projects for ticket files
+	projectsToClean := []config.LinkedProject{}
+	if len(ticket.LinkedProjects) > 0 {
+		projectsToClean = ticket.LinkedProjects
+	} else {
+		// Scan all managed projects for this ticket's files (including broken symlinks)
+		infoMsg("No linked projects in config, scanning all managed projects...")
+		for _, proj := range cfg.ManagedProjects {
+			ticketFile := filepath.Join(proj.ProjectPath, ticketID+".md")
+			// Use Lstat to detect both files and symlinks (even broken ones)
+			if _, err := os.Lstat(ticketFile); err == nil {
+				projectsToClean = append(projectsToClean, config.LinkedProject{
+					ContextName: proj.ContextName,
+					ProjectPath: proj.ProjectPath,
+				})
+				infoMsg(fmt.Sprintf("Found ticket files in: %s", proj.ContextName))
+			}
+		}
+	}
+
+	// Track which project we'll use as archive source (to skip deletion from it until after archiving)
+	var archiveSourceContextName string
+	if ticket.PrimaryContextName != "" {
+		archiveSourceContextName = ticket.PrimaryContextName
+	} else if len(projectsToClean) > 0 {
+		archiveSourceContextName = projectsToClean[0].ContextName
+	}
+
+	for _, lp := range projectsToClean {
 		project := cfg.GetProject(lp.ContextName)
 		if project == nil {
-			continue
-		}
-
-		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
-		sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
-
-		if common.FileExists(symlinkPath) {
-			if err := common.RemoveSymlink(symlinkPath); err != nil {
-				warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
-			} else {
-				successMsg(fmt.Sprintf("Removed symlink from %s", lp.ContextName))
+			// Use the project path from linked project if project not found in config
+			project = &config.Project{
+				ContextName: lp.ContextName,
+				ProjectPath: lp.ProjectPath,
 			}
 		}
 
-		// Remove SESSIONS.md symlink if it exists
-		if common.FileExists(sessionsSymlinkPath) {
-			if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
+		ticketFilePath := filepath.Join(project.ProjectPath, ticketID+".md")
+		sessionsFilePath := filepath.Join(project.ProjectPath, "SESSIONS.md")
+
+		// Skip archive source project - we'll remove files after archiving
+		if lp.ContextName == archiveSourceContextName {
+			infoMsg(fmt.Sprintf("Skipping %s (archive source, will clean after archiving)", lp.ContextName))
+			continue
+		}
+
+		// Remove ticket file (works for both symlinks and concrete files, including broken symlinks)
+		// Use Lstat to detect even broken symlinks
+		if _, err := os.Lstat(ticketFilePath); err == nil {
+			if err := os.Remove(ticketFilePath); err != nil {
+				warningMsg(fmt.Sprintf("Failed to remove file from %s: %v", lp.ContextName, err))
+			} else {
+				successMsg(fmt.Sprintf("Removed file from %s", lp.ContextName))
+			}
+		}
+
+		// Remove SESSIONS.md (works for both symlinks and concrete files, including broken symlinks)
+		if _, err := os.Lstat(sessionsFilePath); err == nil {
+			if err := os.Remove(sessionsFilePath); err != nil {
 				warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
 			} else {
 				successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
@@ -1334,6 +1375,9 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		rcMgr := clauderc.NewManager(project.ProjectPath)
 		if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
 			warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
+		}
+		if err := rcMgr.RemoveFile("SESSIONS.md", dryRun); err != nil {
+			warningMsg(fmt.Sprintf("Failed to update .clauderc for SESSIONS.md in %s: %v", lp.ContextName, err))
 		}
 	}
 
@@ -1384,70 +1428,85 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		suffix++
 	}
 
-	// Copy concrete files from primary project to archive
+	// Ensure archived directory exists
+	if err := common.EnsureDir(archivedDir); err != nil {
+		return fmt.Errorf("failed to create archived directory: %w", err)
+	}
+
+	// Determine which project has the concrete files to archive
+	var archiveSourceProject *config.Project
 	if ticket.PrimaryContextName != "" {
-		// V2 Architecture: copy files, so create directory first
-		if err := common.EnsureDir(archivedDir); err != nil {
-			return fmt.Errorf("failed to create archived directory: %w", err)
+		archiveSourceProject = cfg.GetProject(ticket.PrimaryContextName)
+	} else if len(projectsToClean) > 0 {
+		// No primary context, use first project found with ticket files
+		archiveSourceProject = cfg.GetProject(projectsToClean[0].ContextName)
+		if archiveSourceProject == nil {
+			// Project not in config, use the path we found
+			archiveSourceProject = &config.Project{
+				ContextName: projectsToClean[0].ContextName,
+				ProjectPath: projectsToClean[0].ProjectPath,
+			}
 		}
-		primaryProject := cfg.GetProject(ticket.PrimaryContextName)
-		if primaryProject != nil {
-			primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-			primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
+		infoMsg(fmt.Sprintf("Using %s as archive source", archiveSourceProject.ContextName))
+	}
 
-			// Copy concrete files to archive
-			if common.FileExists(primaryTicketFile) {
-				if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
-					warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
-				} else {
-					successMsg("Copied ticket file to archive")
-					// Remove from primary project
-					os.Remove(primaryTicketFile)
-				}
+	// Copy concrete files from source project to archive
+	if archiveSourceProject != nil {
+		primaryTicketFile := filepath.Join(archiveSourceProject.ProjectPath, ticketID+".md")
+		primarySessionsFile := filepath.Join(archiveSourceProject.ProjectPath, "SESSIONS.md")
+
+		// Copy concrete files to archive
+		if common.FileExists(primaryTicketFile) {
+			if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
+				warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
+			} else {
+				successMsg("Copied ticket file to archive")
+				// Remove from source project
+				os.Remove(primaryTicketFile)
 			}
+		}
 
-			if common.FileExists(primarySessionsFile) {
-				if err := common.CopyFile(primarySessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
-					warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
-				} else {
-					// Remove from primary project
-					os.Remove(primarySessionsFile)
-				}
+		if common.FileExists(primarySessionsFile) {
+			if err := common.CopyFile(primarySessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
+				warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
+			} else {
+				successMsg("Copied sessions file to archive")
+				// Remove from source project
+				os.Remove(primarySessionsFile)
 			}
-
-			// Remove symlinks from all secondary projects
-			for _, lp := range ticket.LinkedProjects {
-				if lp.ContextName != ticket.PrimaryContextName {
-					secondaryTicketFile := filepath.Join(lp.ProjectPath, ticketID+".md")
-					secondarySessionsFile := filepath.Join(lp.ProjectPath, "SESSIONS.md")
-					common.RemoveSymlink(secondaryTicketFile)
-					common.RemoveSymlink(secondarySessionsFile)
-				}
-			}
-
-			// Remove symlinks from data dir
-			dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
-			dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-			common.RemoveSymlink(dataTicketFile)
-			common.RemoveSymlink(dataSessionsFile)
-
-			// Remove ticket directory (should be empty now)
-			os.RemoveAll(ticketDir)
-			successMsg("Moved ticket to archived")
 		}
 	} else {
-		// V1 Architecture: move entire directory
-		// Ensure parent _archived directory exists
-		archivedParent := filepath.Join(cfgMgr.GetContextsPath(), "_archived")
-		if err := common.EnsureDir(archivedParent); err != nil {
-			return fmt.Errorf("failed to create archived parent directory: %w", err)
+		// No source project found, try to archive from data dir if exists
+		dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
+		dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+
+		if common.FileExists(dataTicketFile) {
+			// Follow symlink if it is one, or copy file
+			if err := common.CopyFile(dataTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
+				warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
+			} else {
+				successMsg("Copied ticket file to archive from data dir")
+			}
 		}
 
-		if err := os.Rename(ticketDir, archivedDir); err != nil {
-			return fmt.Errorf("failed to move ticket to archived: %w", err)
+		if common.FileExists(dataSessionsFile) {
+			if err := common.CopyFile(dataSessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
+				warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
+			} else {
+				successMsg("Copied sessions file to archive from data dir")
+			}
 		}
-		successMsg("Moved ticket to archived")
 	}
+
+	// Clean up data dir symlinks/files
+	dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
+	dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
+	common.RemoveSymlink(dataTicketFile)
+	common.RemoveSymlink(dataSessionsFile)
+
+	// Remove ticket directory (should be empty now)
+	os.RemoveAll(ticketDir)
+	successMsg("Moved ticket to archived")
 
 	// Update config: move from active to archived
 	// NOTE: We only save config once at the end to ensure atomicity.

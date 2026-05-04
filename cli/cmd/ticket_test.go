@@ -693,3 +693,101 @@ func Test_TicketList(t *testing.T) {
 		t.Errorf("Expected 1 ticket for project2, got %d", project2Count)
 	}
 }
+
+// TestTicketCompleteWithNullLinkedProjects tests the bug fix where tickets with null linked_projects
+// didn't get their files cleaned up when completed
+func TestTicketCompleteWithNullLinkedProjects(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	// Create multiple projects
+	project1Dir := filepath.Join(h.tempDir, "project1")
+	project2Dir := filepath.Join(h.tempDir, "project2")
+	os.MkdirAll(project1Dir, 0755)
+	os.MkdirAll(project2Dir, 0755)
+
+	// Add projects to config
+	cfg := h.GetConfig()
+	cfg.ManagedProjects = append(cfg.ManagedProjects, config.Project{
+		ContextName: "project1",
+		ProjectPath: project1Dir,
+	})
+	cfg.ManagedProjects = append(cfg.ManagedProjects, config.Project{
+		ContextName: "project2",
+		ProjectPath: project2Dir,
+	})
+	h.configMgr.Save(cfg)
+
+	// Create a ticket with null linked_projects (simulating the bug scenario)
+	ticketID := "TEST-123"
+	now := time.Now()
+	cfg.Tickets.Active = append(cfg.Tickets.Active, config.Ticket{
+		TicketID:       ticketID,
+		Status:         "active",
+		CreatedAt:      now,
+		LastModified:   now,
+		LinkedProjects: nil, // This is the bug scenario - null linked_projects
+	})
+	h.configMgr.Save(cfg)
+
+	// Manually create ticket files in both projects (simulating the orphaned state)
+	ticketFile1 := filepath.Join(project1Dir, ticketID+".md")
+	sessionsFile1 := filepath.Join(project1Dir, "SESSIONS.md")
+	ticketFile2 := filepath.Join(project2Dir, ticketID+".md")
+	sessionsFile2 := filepath.Join(project2Dir, "SESSIONS.md")
+
+	os.WriteFile(ticketFile1, []byte("# Ticket content 1"), 0644)
+	os.WriteFile(sessionsFile1, []byte("# Sessions 1"), 0644)
+	os.WriteFile(ticketFile2, []byte("# Ticket content 2"), 0644)
+	os.WriteFile(sessionsFile2, []byte("# Sessions 2"), 0644)
+
+	// Verify files exist before completion
+	if _, err := os.Stat(ticketFile1); err != nil {
+		t.Fatal("Project1 ticket file should exist before completion")
+	}
+	if _, err := os.Stat(sessionsFile1); err != nil {
+		t.Fatal("Project1 SESSIONS.md should exist before completion")
+	}
+	if _, err := os.Stat(ticketFile2); err != nil {
+		t.Fatal("Project2 ticket file should exist before completion")
+	}
+	if _, err := os.Stat(sessionsFile2); err != nil {
+		t.Fatal("Project2 SESSIONS.md should exist before completion")
+	}
+
+	// Mark ticket as complete
+	rootCmd.SetArgs([]string{"ticket", "complete", ticketID, "--data-dir", h.dataDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Failed to complete ticket: %v", err)
+	}
+
+	// Verify ticket moved to archived
+	cfg = h.GetConfig()
+	if len(cfg.Tickets.Active) != 0 {
+		t.Errorf("Expected 0 active tickets, got %d", len(cfg.Tickets.Active))
+	}
+	if len(cfg.Tickets.Archived) != 1 {
+		t.Fatalf("Expected 1 archived ticket, got %d", len(cfg.Tickets.Archived))
+	}
+
+	// Verify files are cleaned up from both projects (this is the bug fix)
+	if _, err := os.Stat(ticketFile1); err == nil {
+		t.Error("Project1 ticket file should be removed after completion")
+	}
+	if _, err := os.Stat(sessionsFile1); err == nil {
+		t.Error("Project1 SESSIONS.md should be removed after completion")
+	}
+	if _, err := os.Stat(ticketFile2); err == nil {
+		t.Error("Project2 ticket file should be removed after completion")
+	}
+	if _, err := os.Stat(sessionsFile2); err == nil {
+		t.Error("Project2 SESSIONS.md should be removed after completion")
+	}
+
+	// Verify archived files exist
+	archivedPath := filepath.Join(h.dataDir, cfg.Tickets.Archived[0].ArchivedPath)
+	archivedTicketFile := filepath.Join(archivedPath, ticketID+".md")
+	if _, err := os.Stat(archivedTicketFile); err != nil {
+		t.Error("Archived ticket file should exist")
+	}
+}
