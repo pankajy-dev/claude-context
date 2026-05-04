@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Note**: For comprehensive policies on session logging, file system handling, and ticket workflows, use the skill:
+```
+/cctx
+```
+The skill at `~/.claude/skills/cctx/skill.md` provides detailed policies that augment the architectural guidance below.
+
 ## Project Overview
 
 Claude Context Manager (`cctx`) is a Go CLI tool for managing `claude.md` context files across multiple projects using symlinks. It provides centralized storage of context files with symlink-based access from projects.
