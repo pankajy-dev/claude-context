@@ -424,21 +424,19 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 	// Concrete files always go in current directory (v2 behavior)
 	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
 	concreteTicketFile := filepath.Join(currentDir, ticketID+".md")
-	concreteSessionsFile := filepath.Join(currentDir, "SESSIONS.md")
 
 	// Create concrete files (skip if linking to existing)
 	if !linkToExisting {
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
 			dryRunMsg(fmt.Sprintf("Would create concrete ticket file: %s", concreteTicketFile))
-			dryRunMsg(fmt.Sprintf("Would create concrete sessions file: %s", concreteSessionsFile))
 		} else {
 			// Ensure ticket directory in data dir always exists (for symlinks)
 			if err := common.EnsureDir(ticketDir); err != nil {
 				return fmt.Errorf("failed to create ticket directory: %w", err)
 			}
 
-			// Create ticket.md from template
+			// Create ticket.md from template (now includes session tracking section)
 			ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
 			if err != nil {
 				return fmt.Errorf("failed to load ticket template: %w", err)
@@ -455,33 +453,14 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 			successMsg(fmt.Sprintf("Created ticket file: %s", concreteTicketFile))
 
-			// Create SESSIONS.md from template
-			sessionsContent, _, err := templates.GetTemplate("sessions", dataDir)
-			if err != nil {
-				return fmt.Errorf("failed to load sessions template: %w", err)
-			}
-
-			if err := os.WriteFile(concreteSessionsFile, sessionsContent, 0644); err != nil {
-				warningMsg(fmt.Sprintf("Failed to create SESSIONS.md: %v", err))
-			} else {
-				successMsg(fmt.Sprintf("Created SESSIONS.md: %s", concreteSessionsFile))
-			}
-
-			// Create symlinks in data dir pointing to concrete files (if not already in data dir)
+			// Create symlink in data dir pointing to concrete file (if not already in data dir)
 			dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
-			dataDirSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
 
 			if concreteTicketFile != dataDirTicketFile {
 				if err := common.CreateSymlink(concreteTicketFile, dataDirTicketFile); err != nil {
 					warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
 				} else {
 					successMsg("Created symlink in data directory")
-				}
-			}
-
-			if concreteSessionsFile != dataDirSessionsFile {
-				if err := common.CreateSymlink(concreteSessionsFile, dataDirSessionsFile); err != nil {
-					warningMsg(fmt.Sprintf("Failed to create data dir sessions symlink: %v", err))
 				}
 			}
 		}
@@ -496,12 +475,11 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 
 			// Determine target based on primary project
-			var ticketTarget, sessionsTarget string
+			var ticketTarget string
 			if existingTicket.PrimaryContextName != "" {
 				primaryProject := cfg.GetProject(existingTicket.PrimaryContextName)
 				if primaryProject != nil && common.FileExists(filepath.Join(primaryProject.ProjectPath, ticketID+".md")) {
 					ticketTarget = filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-					sessionsTarget = filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
 				}
 			}
 
@@ -510,7 +488,6 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				ticketFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, ticketID+".md")
 				if common.FileExists(ticketFile) {
 					ticketTarget = ticketFile
-					sessionsTarget = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "SESSIONS.md")
 				}
 			}
 
@@ -523,15 +500,6 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to create symlink: %w", err)
 			}
 			successMsg(fmt.Sprintf("Created symlink: %s", concreteTicketFile))
-
-			// Create symlink to sessions file if it exists
-			if common.FileExists(sessionsTarget) {
-				if err := common.CreateSymlink(sessionsTarget, concreteSessionsFile); err != nil {
-					warningMsg(fmt.Sprintf("Failed to create sessions symlink: %v", err))
-				} else {
-					successMsg(fmt.Sprintf("Created sessions symlink: %s", concreteSessionsFile))
-				}
-			}
 		}
 	}
 

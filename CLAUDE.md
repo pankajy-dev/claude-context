@@ -80,8 +80,7 @@ make check
 │   │   └── python.md
 │   ├── _tickets/           # Ticket workspaces
 │   │   └── TICKET-123/
-│   │       ├── ticket.md -> /path/to/project/TICKET-123.md
-│   │       └── SESSIONS.md -> /path/to/project/SESSIONS.md
+│   │       └── ticket.md -> /path/to/project/TICKET-123.md
 │   └── _archived/          # Archived tickets
 └── templates/              # User template overrides
 ```
@@ -91,10 +90,10 @@ make check
 **Key principle**: Concrete files live in the project directory, data directory contains symlinks pointing to them.
 
 When creating a ticket:
-1. **Concrete files** created in project directory: `TICKET-123.md`, `SESSIONS.md`
-2. **Symlinks created in data directory**: `~/.cctx/contexts/_tickets/TICKET-123/ticket.md` → project concrete file
-3. **Primary context** tracked in config: First linked project owns the concrete files
-4. **Other projects** get symlinks pointing to primary project's concrete files
+1. **Concrete file** created in project directory: `TICKET-123.md` (includes session tracking)
+2. **Symlink created in data directory**: `~/.cctx/contexts/_tickets/TICKET-123/ticket.md` → project concrete file
+3. **Primary context** tracked in config: First linked project owns the concrete file
+4. **Other projects** get symlinks pointing to primary project's concrete file
 
 This design ensures:
 - Files are version-controlled with the project

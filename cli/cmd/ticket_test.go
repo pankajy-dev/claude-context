@@ -178,48 +178,92 @@ func (h *TestHelper) VerifyTicketDirectory(ticketID string, shouldExist bool) {
 	}
 }
 
-// VerifyTicketFile checks if ticket.md exists
+// VerifyTicketFile checks if TICKET-ID.md symlink exists in data dir (V2 architecture)
+// In V2, concrete file is in project dir, data dir has symlink named TICKET-ID.md pointing to it
 func (h *TestHelper) VerifyTicketFile(ticketID string) {
-	ticketFile := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID, "ticket.md")
-	if _, err := os.Stat(ticketFile); os.IsNotExist(err) {
-		h.t.Errorf("Ticket file %s does not exist", ticketFile)
+	// Check symlink in data dir (named TICKET-ID.md, not ticket.md)
+	ticketSymlink := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID, ticketID+".md")
+	info, err := os.Lstat(ticketSymlink)
+	if os.IsNotExist(err) {
+		h.t.Errorf("Ticket symlink %s does not exist", ticketSymlink)
+		return
+	}
+
+	// Verify it's a symlink
+	if info.Mode()&os.ModeSymlink == 0 {
+		h.t.Errorf("%s is not a symlink (V2 architecture requires symlink in data dir)", ticketSymlink)
 	}
 }
 
-// VerifySymlink checks if symlink exists in project
+// VerifySymlink checks if file exists in project (V2 architecture)
+// In V2 with single project OR primary project: file is concrete
+// In V2 with secondary project: file is symlink to primary's concrete file
 func (h *TestHelper) VerifySymlink(projectPath, ticketID string, shouldExist bool) {
-	symlinkPath := filepath.Join(projectPath, ticketID+".md")
-	_, err := os.Lstat(symlinkPath)
+	ticketFile := filepath.Join(projectPath, ticketID+".md")
+	_, err := os.Lstat(ticketFile)
 	exists := err == nil
 
 	if exists != shouldExist {
 		if shouldExist {
-			h.t.Errorf("Symlink %s does not exist but should", symlinkPath)
+			h.t.Errorf("Ticket file %s does not exist but should", ticketFile)
 		} else {
-			h.t.Errorf("Symlink %s exists but should not", symlinkPath)
+			h.t.Errorf("Ticket file %s exists but should not", ticketFile)
 		}
+		return
 	}
 
 	if shouldExist {
-		// Verify it's actually a symlink
-		info, err := os.Lstat(symlinkPath)
+		// File exists - could be concrete or symlink depending on primary vs secondary project
+		info, err := os.Lstat(ticketFile)
 		if err != nil {
-			h.t.Errorf("Failed to stat symlink %s: %v", symlinkPath, err)
+			h.t.Errorf("Failed to stat file %s: %v", ticketFile, err)
 			return
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			h.t.Errorf("%s is not a symlink", symlinkPath)
 		}
 
-		// Verify target
-		target, err := os.Readlink(symlinkPath)
+		// Verify corresponding symlink exists in data dir (named TICKET-ID.md)
+		dataSymlink := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID, ticketID+".md")
+		symlinkInfo, err := os.Lstat(dataSymlink)
 		if err != nil {
-			h.t.Errorf("Failed to read symlink %s: %v", symlinkPath, err)
+			h.t.Errorf("Data dir symlink %s does not exist: %v", dataSymlink, err)
 			return
 		}
-		expectedTarget := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID, "ticket.md")
-		if target != expectedTarget {
-			h.t.Errorf("Symlink target is %s, expected %s", target, expectedTarget)
+		if symlinkInfo.Mode()&os.ModeSymlink == 0 {
+			h.t.Errorf("%s is not a symlink", dataSymlink)
+			return
+		}
+
+		// Data symlink should point to either this file (if concrete) or same target (if both are symlinks)
+		dataTarget, err := os.Readlink(dataSymlink)
+		if err != nil {
+			h.t.Errorf("Failed to read data symlink %s: %v", dataSymlink, err)
+			return
+		}
+
+		// If ticketFile is concrete, dataSymlink should point to it
+		// If ticketFile is symlink, both should point to same concrete file
+		if info.Mode()&os.ModeSymlink == 0 {
+			// Concrete file - data symlink should point to it
+			// Resolve both paths to handle /private/var vs /var on macOS
+			dataTargetResolved, _ := filepath.EvalSymlinks(dataTarget)
+			ticketFileResolved, _ := filepath.EvalSymlinks(ticketFile)
+			if dataTargetResolved != ticketFileResolved && dataTarget != ticketFile {
+				h.t.Errorf("Data symlink target is %s (resolved: %s), expected %s (resolved: %s)",
+					dataTarget, dataTargetResolved, ticketFile, ticketFileResolved)
+			}
+		} else {
+			// Symlink - both should point to same target
+			projectTarget, err := os.Readlink(ticketFile)
+			if err != nil {
+				h.t.Errorf("Failed to read project symlink %s: %v", ticketFile, err)
+				return
+			}
+			// Resolve paths to handle macOS /private/var vs /var
+			dataTargetResolved, _ := filepath.EvalSymlinks(dataTarget)
+			projectTargetResolved, _ := filepath.EvalSymlinks(projectTarget)
+			if dataTargetResolved != projectTargetResolved && dataTarget != projectTarget {
+				h.t.Errorf("Symlinks point to different targets: data=%s (resolved: %s), project=%s (resolved: %s)",
+					dataTarget, dataTargetResolved, projectTarget, projectTargetResolved)
+			}
 		}
 	}
 }
@@ -326,20 +370,21 @@ func Test_TicketCreate(t *testing.T) {
 		},
 	}
 
-	// Create ticket directory and file
+	// V2 Architecture: Create concrete file in project, symlink in data dir
 	ticketDir := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID)
 	if err := os.MkdirAll(ticketDir, 0755); err != nil {
 		t.Fatalf("Failed to create ticket dir: %v", err)
 	}
 
-	ticketFile := filepath.Join(ticketDir, "ticket.md")
-	if err := os.WriteFile(ticketFile, []byte("# Ticket: "+ticketID), 0644); err != nil {
-		t.Fatalf("Failed to create ticket file: %v", err)
+	// Create concrete file in project directory
+	concreteFile := filepath.Join(h.projectDir, ticketID+".md")
+	if err := os.WriteFile(concreteFile, []byte("# Ticket: "+ticketID), 0644); err != nil {
+		t.Fatalf("Failed to create concrete ticket file: %v", err)
 	}
 
-	// Create symlink
-	symlinkPath := filepath.Join(h.projectDir, ticketID+".md")
-	if err := os.Symlink(ticketFile, symlinkPath); err != nil {
+	// Create symlink in data dir pointing to concrete file
+	dataSymlink := filepath.Join(ticketDir, ticketID+".md")
+	if err := os.Symlink(concreteFile, dataSymlink); err != nil {
 		t.Fatalf("Failed to create symlink: %v", err)
 	}
 
@@ -408,15 +453,20 @@ func Test_TicketLinkToMultipleProjects(t *testing.T) {
 		},
 	}
 
-	// Create ticket directory and file
+	// V2 Architecture: Create concrete file in primary project (project1)
 	ticketDir := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID)
 	os.MkdirAll(ticketDir, 0755)
-	ticketFile := filepath.Join(ticketDir, "ticket.md")
-	os.WriteFile(ticketFile, []byte("# Ticket: "+ticketID), 0644)
 
-	// Create symlink in project1
-	symlink1 := filepath.Join(project1Dir, ticketID+".md")
-	os.Symlink(ticketFile, symlink1)
+	// Create concrete file in project1 (primary project)
+	concreteFile := filepath.Join(project1Dir, ticketID+".md")
+	os.WriteFile(concreteFile, []byte("# Ticket: "+ticketID), 0644)
+
+	// Create symlink in data dir pointing to concrete file
+	dataSymlink := filepath.Join(ticketDir, ticketID+".md")
+	os.Symlink(concreteFile, dataSymlink)
+
+	// Set primary context
+	ticket.PrimaryContextName = "project1"
 
 	cfg.Tickets.Active = append(cfg.Tickets.Active, ticket)
 	h.configMgr.Save(cfg)
@@ -435,9 +485,9 @@ func Test_TicketLinkToMultipleProjects(t *testing.T) {
 	}
 	h.configMgr.Save(cfg)
 
-	// Create symlink in project2
+	// Create symlink in project2 pointing to project1's concrete file
 	symlink2 := filepath.Join(project2Dir, ticketID+".md")
-	os.Symlink(ticketFile, symlink2)
+	os.Symlink(concreteFile, symlink2)
 
 	// Verify
 	h.VerifyTicketLinkedToProject(ticketID, "project1", true)
