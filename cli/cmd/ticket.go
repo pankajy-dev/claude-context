@@ -170,49 +170,72 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				}
 				fmt.Println()
 				fmt.Println("Do you want to complete any tickets before starting " + tentativeTicketID + "?")
-				fmt.Println("  1. Yes, mark one as completed")
-				fmt.Println("  2. No, continue with multiple active tickets")
-				fmt.Println("  3. Cancel")
-				fmt.Print("\nEnter choice [1-3]: ")
+				fmt.Println()
+
+				// Build numbered list: one entry per active ticket + "all" + continue + cancel
+				ticketChoices := cfg.CurrentWorkingTickets
+				for i, cwt := range ticketChoices {
+					ticket := cfg.GetTicket(cwt.TicketID, false)
+					status := "unknown"
+					if ticket != nil {
+						status = ticket.Status
+					}
+					label := cwt.TicketID
+					if cwt.ProjectName != "" {
+						label += fmt.Sprintf(" (%s)", cwt.ProjectName)
+					}
+					fmt.Printf("  %d. Mark %s as completed [%s]\n", i+1, label, status)
+				}
+				allChoice := len(ticketChoices) + 1
+				continueChoice := len(ticketChoices) + 2
+				cancelChoice := len(ticketChoices) + 3
+				fmt.Printf("  %d. Mark all as completed\n", allChoice)
+				fmt.Printf("  %d. No, continue with multiple active tickets\n", continueChoice)
+				fmt.Printf("  %d. Cancel\n", cancelChoice)
+				fmt.Printf("\nEnter choice [1-%d]: ", cancelChoice)
 
 				var choice string
 				fmt.Scanln(&choice)
 				fmt.Println()
 
-				switch choice {
-				case "1":
-					// Prompt for which ticket to complete
-					fmt.Print("Enter ticket ID to complete: ")
-					var ticketToComplete string
-					fmt.Scanln(&ticketToComplete)
-					fmt.Println()
+				choiceNum := 0
+				fmt.Sscanf(choice, "%d", &choiceNum)
 
-					// Mark the ticket as completed
+				markComplete := func(ticketToComplete string) {
 					oldTicket := cfg.GetTicket(ticketToComplete, false)
 					if oldTicket != nil && oldTicket.Status != "completed" {
 						completedAt := time.Now()
 						oldTicket.Status = "completed"
 						oldTicket.CompletedAt = &completedAt
 						oldTicket.LastModified = time.Now()
-
-						// Remove from working list
 						cfg.RemoveCurrentWorkingTicket(ticketToComplete)
-
-						// Save the config
-						if err := cfgMgr.Save(cfg); err != nil {
-							return fmt.Errorf("failed to save config: %w", err)
-						}
 						successMsg(fmt.Sprintf("Marked ticket %s as completed", ticketToComplete))
-						fmt.Println()
 					} else if oldTicket == nil {
 						warningMsg(fmt.Sprintf("Ticket %s not found", ticketToComplete))
 					} else {
 						warningMsg(fmt.Sprintf("Ticket %s already completed", ticketToComplete))
 					}
-				case "2":
+				}
+
+				switch {
+				case choiceNum >= 1 && choiceNum <= len(ticketChoices):
+					markComplete(ticketChoices[choiceNum-1].TicketID)
+					if err := cfgMgr.Save(cfg); err != nil {
+						return fmt.Errorf("failed to save config: %w", err)
+					}
+					fmt.Println()
+				case choiceNum == allChoice:
+					for _, cwt := range ticketChoices {
+						markComplete(cwt.TicketID)
+					}
+					if err := cfgMgr.Save(cfg); err != nil {
+						return fmt.Errorf("failed to save config: %w", err)
+					}
+					fmt.Println()
+				case choiceNum == continueChoice:
 					infoMsg("Continuing with multiple active tickets")
 					fmt.Println()
-				case "3", "":
+				case choiceNum == cancelChoice || choice == "":
 					infoMsg("Operation cancelled")
 					return nil
 				default:
