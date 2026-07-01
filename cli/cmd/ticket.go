@@ -1314,6 +1314,28 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 				infoMsg(fmt.Sprintf("Found ticket files in: %s", proj.ContextName))
 			}
 		}
+
+		// Also check current working directory — ticket may exist in an unmanaged project
+		if cwd, err := os.Getwd(); err == nil {
+			cwdTicketFile := filepath.Join(cwd, ticketID+".md")
+			if _, err := os.Lstat(cwdTicketFile); err == nil {
+				// Only add if not already covered by a managed project
+				alreadyCovered := false
+				for _, lp := range projectsToClean {
+					if lp.ProjectPath == cwd {
+						alreadyCovered = true
+						break
+					}
+				}
+				if !alreadyCovered {
+					projectsToClean = append(projectsToClean, config.LinkedProject{
+						ContextName: filepath.Base(cwd),
+						ProjectPath: cwd,
+					})
+					infoMsg(fmt.Sprintf("Found ticket files in current directory: %s", cwd))
+				}
+			}
+		}
 	}
 
 	// Track which project we'll use as archive source (to skip deletion from it until after archiving)
