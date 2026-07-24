@@ -1707,6 +1707,9 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
 	}
 
+	// Strip .md suffix if user passed a filename
+	ticketID = strings.TrimSuffix(ticketID, ".md")
+
 	// Get data directory
 	dataDir := GetDataDirOrExit()
 
@@ -1720,7 +1723,20 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 	// Find ticket
 	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
-		return fmt.Errorf("ticket not found: %s", ticketID)
+		// Ticket not in config — check if the file exists in cwd and offer to archive it directly
+		cwd, _ := os.Getwd()
+		filePath := filepath.Join(cwd, ticketID+".md")
+		if _, statErr := os.Lstat(filePath); statErr != nil {
+			return fmt.Errorf("ticket not found: %s", ticketID)
+		}
+		warningMsg(fmt.Sprintf("Ticket %s not found in config, but file exists in current directory", ticketID))
+		infoMsg(fmt.Sprintf("Will archive to: _archived/<date>_%s/", filepath.Base(cwd)))
+		if !dryRun && !common.Confirm("Proceed?", true) {
+			infoMsg("Operation cancelled")
+			return nil
+		}
+		archiveArgs := []string{ticketID + ".md"}
+		return runArchive(cmd, archiveArgs)
 	}
 
 	if ticket.Status == "active" {
