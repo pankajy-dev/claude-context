@@ -203,33 +203,28 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 				markComplete := func(ticketToComplete string) {
 					oldTicket := cfg.GetTicket(ticketToComplete, false)
-					if oldTicket != nil && oldTicket.Status != "completed" {
-						completedAt := time.Now()
-						oldTicket.Status = "completed"
-						oldTicket.CompletedAt = &completedAt
-						oldTicket.LastModified = time.Now()
-						cfg.RemoveCurrentWorkingTicket(ticketToComplete)
-						successMsg(fmt.Sprintf("Marked ticket %s as completed", ticketToComplete))
-					} else if oldTicket == nil {
+					if oldTicket == nil {
 						warningMsg(fmt.Sprintf("Ticket %s not found", ticketToComplete))
-					} else {
-						warningMsg(fmt.Sprintf("Ticket %s already completed", ticketToComplete))
+						return
 					}
+					if oldTicket.Status == "completed" {
+						warningMsg(fmt.Sprintf("Ticket %s already completed", ticketToComplete))
+						return
+					}
+					if err := runTicketComplete(ticketCompleteCmd, []string{ticketToComplete}); err != nil {
+						warningMsg(fmt.Sprintf("Failed to complete ticket %s: %v", ticketToComplete, err))
+					}
+					// Reload config since runTicketComplete modifies it
+					cfg, _ = cfgMgr.Load()
 				}
 
 				switch {
 				case choiceNum >= 1 && choiceNum <= len(ticketChoices):
 					markComplete(ticketChoices[choiceNum-1].TicketID)
-					if err := cfgMgr.Save(cfg); err != nil {
-						return fmt.Errorf("failed to save config: %w", err)
-					}
 					fmt.Println()
 				case choiceNum == allChoice:
 					for _, cwt := range ticketChoices {
 						markComplete(cwt.TicketID)
-					}
-					if err := cfgMgr.Save(cfg); err != nil {
-						return fmt.Errorf("failed to save config: %w", err)
 					}
 					fmt.Println()
 				case choiceNum == continueChoice:
@@ -1450,11 +1445,23 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	var archiveSourceProject *config.Project
 	if ticket.PrimaryContextName != "" {
 		archiveSourceProject = cfg.GetProject(ticket.PrimaryContextName)
-	} else if len(projectsToClean) > 0 {
-		// No primary context, use first project found with ticket files
+		// Primary project may not be in managed projects (e.g. unmanaged repo); fall back to projectsToClean
+		if archiveSourceProject == nil {
+			for _, lp := range projectsToClean {
+				if lp.ContextName == ticket.PrimaryContextName {
+					archiveSourceProject = &config.Project{
+						ContextName: lp.ContextName,
+						ProjectPath: lp.ProjectPath,
+					}
+					break
+				}
+			}
+		}
+	}
+	if archiveSourceProject == nil && len(projectsToClean) > 0 {
+		// No primary context set, use first project found with ticket files
 		archiveSourceProject = cfg.GetProject(projectsToClean[0].ContextName)
 		if archiveSourceProject == nil {
-			// Project not in config, use the path we found
 			archiveSourceProject = &config.Project{
 				ContextName: projectsToClean[0].ContextName,
 				ProjectPath: projectsToClean[0].ProjectPath,
@@ -1486,6 +1493,19 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 				successMsg("Copied sessions file to archive")
 				// Remove from source project
 				os.Remove(primarySessionsFile)
+			}
+		}
+
+		// Prompt for additional files containing the ticket ID
+		extras := findExtraTicketFiles(archiveSourceProject.ProjectPath, ticketID)
+		selectedExtras := promptExtraFiles(extras)
+		for _, name := range selectedExtras {
+			src := filepath.Join(archiveSourceProject.ProjectPath, name)
+			if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
+				warningMsg(fmt.Sprintf("Failed to copy %s to archive: %v", name, err))
+			} else {
+				successMsg(fmt.Sprintf("Copied %s to archive", name))
+				os.Remove(src)
 			}
 		}
 	} else {
@@ -1934,6 +1954,82 @@ func runTicketEdit(cmd *cobra.Command, args []string) error {
 }
 
 // Helper function to split and trim strings
+// findExtraTicketFiles returns .md files in dir whose name contains ticketID,
+// excluding the canonical ticket file itself (ticketID+".md") and SESSIONS.md.
+func findExtraTicketFiles(dir, ticketID string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var extras []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == ticketID+".md" || name == "SESSIONS.md" {
+			continue
+		}
+		if strings.HasSuffix(name, ".md") && strings.Contains(name, ticketID) {
+			extras = append(extras, name)
+		}
+	}
+	return extras
+}
+
+// promptExtraFiles interactively asks the user which extra files to include in the archive.
+// Returns the selected file names.
+func promptExtraFiles(extras []string) []string {
+	if len(extras) == 0 {
+		return nil
+	}
+	fmt.Println()
+	infoMsg("Found additional files containing the ticket ID:")
+	fmt.Println()
+	for i, f := range extras {
+		fmt.Printf("  %d. %s\n", i+1, f)
+	}
+	fmt.Printf("  %d. All of the above\n", len(extras)+1)
+	fmt.Printf("  %d. None\n", len(extras)+2)
+	fmt.Printf("\nSelect files to include in archive (comma-separated, e.g. 1,3): ")
+
+	var input string
+	fmt.Scanln(&input)
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil
+	}
+
+	noneChoice := len(extras) + 2
+	allChoice := len(extras) + 1
+
+	// Parse selections
+	selected := map[int]bool{}
+	for _, part := range strings.Split(input, ",") {
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSpace(part), "%d", &n); err != nil {
+			continue
+		}
+		if n == noneChoice {
+			return nil
+		}
+		if n == allChoice {
+			return extras
+		}
+		if n >= 1 && n <= len(extras) {
+			selected[n-1] = true
+		}
+	}
+
+	var result []string
+	for i, f := range extras {
+		if selected[i] {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
 func splitAndTrim(s string, sep string) []string {
 	parts := []string{}
 	for _, part := range strings.Split(s, sep) {
@@ -2336,6 +2432,16 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would move %s to archived", ticketID))
+			// Report any extra files that would be included
+			for _, lp := range ticket.LinkedProjects {
+				project := cfg.GetProject(lp.ContextName)
+				if project == nil {
+					continue
+				}
+				for _, name := range findExtraTicketFiles(project.ProjectPath, ticketID) {
+					dryRunMsg(fmt.Sprintf("Would archive extra file from %s: %s", lp.ContextName, name))
+				}
+			}
 		} else {
 			if common.DirExists(ticketDir) {
 				// Ensure archived directory exists
@@ -2346,6 +2452,30 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 				if err := os.Rename(ticketDir, archivedDir); err != nil {
 					warningMsg(fmt.Sprintf("Failed to move %s to archived: %v", ticketID, err))
 					continue
+				}
+			} else {
+				// ticketDir doesn't exist; still create archivedDir so extra files have somewhere to land
+				if err := common.EnsureDir(archivedDir); err != nil {
+					warningMsg(fmt.Sprintf("Failed to create archive dir for %s: %v", ticketID, err))
+				}
+			}
+
+			// Auto-include any extra files containing the ticket ID from linked projects
+			for _, lp := range ticket.LinkedProjects {
+				project := cfg.GetProject(lp.ContextName)
+				if project == nil {
+					continue
+				}
+				for _, name := range findExtraTicketFiles(project.ProjectPath, ticketID) {
+					src := filepath.Join(project.ProjectPath, name)
+					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
+						warningMsg(fmt.Sprintf("Failed to archive %s from %s: %v", name, lp.ContextName, err))
+					} else {
+						os.Remove(src)
+						if verbose {
+							successMsg(fmt.Sprintf("Archived extra file: %s", name))
+						}
+					}
 				}
 			}
 		}
