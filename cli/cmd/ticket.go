@@ -1720,8 +1720,8 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Find ticket
-	ticket := cfg.GetTicket(ticketID, false)
+	// Find ticket (include archived — ticket complete may have already moved it there)
+	ticket := cfg.GetTicket(ticketID, true)
 	if ticket == nil {
 		// Ticket not in config — check if the file exists in cwd and offer to archive it directly
 		cwd, _ := os.Getwd()
@@ -1737,6 +1737,35 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		}
 		archiveArgs := []string{ticketID + ".md"}
 		return runArchive(cmd, archiveArgs)
+	}
+
+	if ticket.ArchivedPath != "" {
+		// Ticket already archived — check if there are still files in cwd to move into it
+		cwd, _ := os.Getwd()
+		filePath := filepath.Join(cwd, ticketID+".md")
+		archiveDir := filepath.Join(cfgMgr.GetRepoRoot(), ticket.ArchivedPath)
+		if _, statErr := os.Lstat(filePath); statErr == nil && common.DirExists(archiveDir) {
+			infoMsg(fmt.Sprintf("Ticket %s is already archived at: %s", ticketID, archiveDir))
+			infoMsg(fmt.Sprintf("Found %s.md in current directory — archiving into existing ticket archive", ticketID))
+			if !dryRun && !common.Confirm("Proceed?", true) {
+				infoMsg("Operation cancelled")
+				return nil
+			}
+			if dryRun {
+				dryRunMsg(fmt.Sprintf("Would move %s.md → %s", ticketID, archiveDir))
+				return nil
+			}
+			dest := filepath.Join(archiveDir, ticketID+".md")
+			if err := common.CopyFile(filePath, dest); err != nil {
+				return fmt.Errorf("failed to copy file to archive: %w", err)
+			}
+			os.Remove(filePath)
+			successMsg(fmt.Sprintf("Archived %s.md → %s", ticketID, archiveDir))
+			return nil
+		}
+		successMsg(fmt.Sprintf("Ticket %s is already archived", ticketID))
+		infoMsg(fmt.Sprintf("Location: %s", archiveDir))
+		return nil
 	}
 
 	if ticket.Status == "active" {
