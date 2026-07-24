@@ -1204,14 +1204,25 @@ Git info is auto-detected from your current directory:
   - Override with --commits flag if needed
 
 Examples:
+  cctx ticket complete
   cctx ticket complete TICKET-123
   cctx ticket complete TICKET-123 --commits "abc123,def456" --prs "42,43"`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketComplete,
 }
 
 func runTicketComplete(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		branch := common.GetGitBranch()
+		if branch == "" || branch == "main" || branch == "master" {
+			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
+		}
+		ticketID = branch
+		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1589,14 +1600,25 @@ var ticketAbandonCmd = &cobra.Command{
 	Long: `Mark a ticket as abandoned with optional reason.
 
 Example:
+  cctx ticket abandon
   cctx ticket abandon TICKET-123
   cctx ticket abandon TICKET-123 --reason "Requirements changed"`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketAbandon,
 }
 
 func runTicketAbandon(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		branch := common.GetGitBranch()
+		if branch == "" || branch == "main" || branch == "master" {
+			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
+		}
+		ticketID = branch
+		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -1666,13 +1688,24 @@ Moves ticket to archived directory, removes symlinks from all projects,
 and generates documentation for completed tickets.
 
 Example:
+  cctx ticket archive
   cctx ticket archive TICKET-123`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketArchive,
 }
 
 func runTicketArchive(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		branch := common.GetGitBranch()
+		if branch == "" || branch == "main" || branch == "master" {
+			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
+		}
+		ticketID = branch
+		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
