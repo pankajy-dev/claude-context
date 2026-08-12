@@ -159,24 +159,15 @@ func runArchive(cmd *cobra.Command, args []string) error {
 }
 
 // resolveArchiveDir determines where to archive a file.
-// If the filename stem matches an existing ticket archive, use that directory.
+// If the filename matches an existing ticket archive, use that directory.
 // Otherwise use _archived/<date>_<dirname>.
 func resolveArchiveDir(cfgMgr *config.Manager, cfg *config.Config, cwd, filename string) string {
-	stem := strings.TrimSuffix(filename, filepath.Ext(filename))
-
-	// Check archived tickets first
-	for _, t := range cfg.Tickets.Archived {
-		if strings.EqualFold(t.TicketID, stem) && t.ArchivedPath != "" {
-			candidate := filepath.Join(cfgMgr.GetRepoRoot(), t.ArchivedPath)
-			if common.DirExists(candidate) {
-				return candidate
+	// Check archived tickets first, then active ones that already have an archive path
+	for _, group := range [][]config.Ticket{cfg.Tickets.Archived, cfg.Tickets.Active} {
+		for _, t := range group {
+			if t.ArchivedPath == "" || !IsTicketFileName(filename, t.TicketID) {
+				continue
 			}
-		}
-	}
-
-	// Check active tickets that have been completed (may have archivepath set)
-	for _, t := range cfg.Tickets.Active {
-		if strings.EqualFold(t.TicketID, stem) && t.ArchivedPath != "" {
 			candidate := filepath.Join(cfgMgr.GetRepoRoot(), t.ArchivedPath)
 			if common.DirExists(candidate) {
 				return candidate

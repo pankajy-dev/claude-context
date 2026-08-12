@@ -1508,7 +1508,7 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		}
 
 		// Prompt for additional files containing the ticket ID
-		extras := findExtraTicketFiles(archiveSourceProject.ProjectPath, ticketID)
+		extras := FindExtraTicketFiles(archiveSourceProject.ProjectPath, ticketID)
 		selectedExtras := promptExtraFiles(extras)
 		for _, name := range selectedExtras {
 			src := filepath.Join(archiveSourceProject.ProjectPath, name)
@@ -1722,45 +1722,51 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 
 	// Find ticket (include archived — ticket complete may have already moved it there)
 	ticket := cfg.GetTicket(ticketID, true)
-	if ticket == nil {
-		// Ticket not in config — check if the file exists in cwd and offer to archive it directly
+	if ticket == nil { // Ticket not in config — check if files exist in cwd and offer to archive them directly
 		cwd, _ := os.Getwd()
-		filePath := filepath.Join(cwd, ticketID+".md")
-		if _, statErr := os.Lstat(filePath); statErr != nil {
+		files := FindTicketFiles(cwd, ticketID)
+		if len(files) == 0 {
 			return fmt.Errorf("ticket not found: %s", ticketID)
 		}
-		warningMsg(fmt.Sprintf("Ticket %s not found in config, but file exists in current directory", ticketID))
+		warningMsg(fmt.Sprintf("Ticket %s not found in config, but %d file(s) exist in current directory", ticketID, len(files)))
 		infoMsg(fmt.Sprintf("Will archive to: _archived/<date>_%s/", filepath.Base(cwd)))
-		if !dryRun && !common.Confirm("Proceed?", true) {
-			infoMsg("Operation cancelled")
-			return nil
+		// runArchive lists the matched files and confirms, so don't gate it behind
+		// a second prompt that hides them.
+		archiveArgs := make([]string, 0, len(files))
+		for _, f := range files {
+			archiveArgs = append(archiveArgs, filepath.Base(f))
 		}
-		archiveArgs := []string{ticketID + ".md"}
 		return runArchive(cmd, archiveArgs)
 	}
 
 	if ticket.ArchivedPath != "" {
 		// Ticket already archived — check if there are still files in cwd to move into it
 		cwd, _ := os.Getwd()
-		filePath := filepath.Join(cwd, ticketID+".md")
+		leftover := FindTicketFiles(cwd, ticketID)
 		archiveDir := filepath.Join(cfgMgr.GetRepoRoot(), ticket.ArchivedPath)
-		if _, statErr := os.Lstat(filePath); statErr == nil && common.DirExists(archiveDir) {
+		if len(leftover) > 0 && common.DirExists(archiveDir) {
 			infoMsg(fmt.Sprintf("Ticket %s is already archived at: %s", ticketID, archiveDir))
-			infoMsg(fmt.Sprintf("Found %s.md in current directory — archiving into existing ticket archive", ticketID))
+			infoMsg(fmt.Sprintf("Found %d file(s) in current directory — archiving into existing ticket archive", len(leftover)))
+			for _, f := range leftover {
+				fmt.Printf("  - %s\n", filepath.Base(f))
+			}
 			if !dryRun && !common.Confirm("Proceed?", true) {
 				infoMsg("Operation cancelled")
 				return nil
 			}
-			if dryRun {
-				dryRunMsg(fmt.Sprintf("Would move %s.md → %s", ticketID, archiveDir))
-				return nil
+			for _, f := range leftover {
+				name := filepath.Base(f)
+				if dryRun {
+					dryRunMsg(fmt.Sprintf("Would move %s → %s", name, archiveDir))
+					continue
+				}
+				if err := common.CopyFile(f, filepath.Join(archiveDir, name)); err != nil {
+					warningMsg(fmt.Sprintf("Failed to archive %s: %v", name, err))
+					continue
+				}
+				os.Remove(f)
+				successMsg(fmt.Sprintf("Archived %s → %s", name, archiveDir))
 			}
-			dest := filepath.Join(archiveDir, ticketID+".md")
-			if err := common.CopyFile(filePath, dest); err != nil {
-				return fmt.Errorf("failed to copy file to archive: %w", err)
-			}
-			os.Remove(filePath)
-			successMsg(fmt.Sprintf("Archived %s.md → %s", ticketID, archiveDir))
 			return nil
 		}
 		successMsg(fmt.Sprintf("Ticket %s is already archived", ticketID))
@@ -1846,17 +1852,21 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		if ticket.PrimaryContextName != "" {
 			primaryProject := cfg.GetProject(ticket.PrimaryContextName)
 			if primaryProject != nil {
-				primaryTicketFile := filepath.Join(primaryProject.ProjectPath, ticketID+".md")
 				primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
 
-				// Copy concrete files to archive
-				if common.FileExists(primaryTicketFile) {
-					if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil{
-						warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
-					} else {
-						successMsg("Copied ticket file to archive")
-						// Remove from primary project
-						os.Remove(primaryTicketFile)
+				// Copy the ticket file and every companion named after the ticket
+				rcMgr := clauderc.NewManager(primaryProject.ProjectPath)
+				for _, src := range FindTicketFiles(primaryProject.ProjectPath, ticketID) {
+					name := filepath.Base(src)
+					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
+						warningMsg(fmt.Sprintf("Failed to copy %s to archive: %v", name, err))
+						continue
+					}
+					successMsg(fmt.Sprintf("Copied %s to archive", name))
+					os.Remove(src)
+
+					if name != ticketID+".md" {
+						rcMgr.RemoveFile(name, dryRun)
 					}
 				}
 
@@ -2032,82 +2042,6 @@ func runTicketEdit(cmd *cobra.Command, args []string) error {
 }
 
 // Helper function to split and trim strings
-// findExtraTicketFiles returns .md files in dir whose name contains ticketID,
-// excluding the canonical ticket file itself (ticketID+".md") and SESSIONS.md.
-func findExtraTicketFiles(dir, ticketID string) []string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var extras []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if name == ticketID+".md" || name == "SESSIONS.md" {
-			continue
-		}
-		if strings.HasSuffix(name, ".md") && strings.Contains(name, ticketID) {
-			extras = append(extras, name)
-		}
-	}
-	return extras
-}
-
-// promptExtraFiles interactively asks the user which extra files to include in the archive.
-// Returns the selected file names.
-func promptExtraFiles(extras []string) []string {
-	if len(extras) == 0 {
-		return nil
-	}
-	fmt.Println()
-	infoMsg("Found additional files containing the ticket ID:")
-	fmt.Println()
-	for i, f := range extras {
-		fmt.Printf("  %d. %s\n", i+1, f)
-	}
-	fmt.Printf("  %d. All of the above\n", len(extras)+1)
-	fmt.Printf("  %d. None\n", len(extras)+2)
-	fmt.Printf("\nSelect files to include in archive (comma-separated, e.g. 1,3): ")
-
-	var input string
-	fmt.Scanln(&input)
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return nil
-	}
-
-	noneChoice := len(extras) + 2
-	allChoice := len(extras) + 1
-
-	// Parse selections
-	selected := map[int]bool{}
-	for _, part := range strings.Split(input, ",") {
-		var n int
-		if _, err := fmt.Sscanf(strings.TrimSpace(part), "%d", &n); err != nil {
-			continue
-		}
-		if n == noneChoice {
-			return nil
-		}
-		if n == allChoice {
-			return extras
-		}
-		if n >= 1 && n <= len(extras) {
-			selected[n-1] = true
-		}
-	}
-
-	var result []string
-	for i, f := range extras {
-		if selected[i] {
-			result = append(result, f)
-		}
-	}
-	return result
-}
-
 func splitAndTrim(s string, sep string) []string {
 	parts := []string{}
 	for _, part := range strings.Split(s, sep) {
@@ -2516,7 +2450,7 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 				if project == nil {
 					continue
 				}
-				for _, name := range findExtraTicketFiles(project.ProjectPath, ticketID) {
+				for _, name := range FindExtraTicketFiles(project.ProjectPath, ticketID) {
 					dryRunMsg(fmt.Sprintf("Would archive extra file from %s: %s", lp.ContextName, name))
 				}
 			}
@@ -2544,7 +2478,7 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 				if project == nil {
 					continue
 				}
-				for _, name := range findExtraTicketFiles(project.ProjectPath, ticketID) {
+				for _, name := range FindExtraTicketFiles(project.ProjectPath, ticketID) {
 					src := filepath.Join(project.ProjectPath, name)
 					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
 						warningMsg(fmt.Sprintf("Failed to archive %s from %s: %v", name, lp.ContextName, err))
