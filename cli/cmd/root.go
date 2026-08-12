@@ -25,8 +25,7 @@ var rootCmd = &cobra.Command{
 	Long: `Claude Context Manager
 
 Manage per-ticket context files for Claude Code. Each ticket gets a concrete
-<TICKET-ID>.md in the project directory, tracked centrally in ~/.cctx, with
-.clauderc updated so Claude Code picks it up automatically.
+<TICKET-ID>.md in the project directory, tracked centrally in ~/.cctx.
 
   cctx ticket create CBP-123     Start work on a ticket
   cctx ticket complete           Wrap it up (auto-detects from branch)

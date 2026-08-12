@@ -27,8 +27,8 @@ var ticketCreateCmd = &cobra.Command{
 	Short: "Create a new ticket workspace",
 	Long: `Create a new ticket workspace for tracking work across multiple projects.
 
-Automatically creates a symlink in the current directory and updates .clauderc
-to include the ticket file.
+Creates the ticket file in the current directory and a symlink in the data
+directory. .clauderc is not modified.
 
 If ticket-id is not provided, it will be auto-detected from the current git branch
 (only if the branch is not main/master). If a ticket with that name already exists,
@@ -521,17 +521,8 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// V2: Concrete files already created in current directory
-	// Just update .clauderc (ticket.md only, not SESSIONS.md)
-	if !dryRun {
-		rcMgr := clauderc.NewManager(currentDir)
-		ticketFileName := ticketID + ".md"
-		if err := rcMgr.AddFile(ticketFileName, dryRun); err != nil {
-			warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", ticketFileName, err))
-		} else {
-			successMsg(fmt.Sprintf("Added %s to .clauderc", ticketFileName))
-		}
-	}
+	// Ticket files are not registered in .clauderc — Claude Code picks them up
+	// on its own. addTicketToClauderc is kept in case that changes back.
 
 	// Git commit removed (no longer tracking in git)
 
@@ -569,13 +560,26 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// addTicketToClauderc adds <ticket-id>.md to a project's .clauderc, creating the
+// file if needed. Intentionally unused: ticket create/link no longer touch
+// .clauderc. Call this again to restore that behaviour.
+func addTicketToClauderc(projectPath, ticketID string, dryRun bool) {
+	rcMgr := clauderc.NewManager(projectPath)
+	ticketFileName := ticketID + ".md"
+	if err := rcMgr.AddFile(ticketFileName, dryRun); err != nil {
+		warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", ticketFileName, err))
+	} else if !dryRun {
+		successMsg(fmt.Sprintf("Added %s to .clauderc", ticketFileName))
+	}
+}
+
 // ticket link subcommand
 var ticketLinkCmd = &cobra.Command{
 	Use:   "link <ticket-id> [project...]",
 	Short: "Link ticket to one or more projects",
 	Long: `Link a ticket to one or more projects.
 
-Creates symlinks in project directories and updates .clauderc automatically.
+Creates symlinks in project directories. .clauderc is not modified.
 
 With no arguments the ticket ID comes from --ticket/-t, CCTX_TICKET or the
 current git branch, and the project from --project/-p, CCTX_PROJECT or the
@@ -705,7 +709,6 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would create symlink: %s", symlinkPath))
-			dryRunMsg(fmt.Sprintf("Would add to .clauderc"))
 		} else {
 			// For primary project, ensure concrete files are in project
 			if ticket.PrimaryContextName == projectName {
@@ -765,14 +768,6 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 						successMsg("Created sessions symlink")
 					}
 				}
-			}
-
-			// Update .clauderc
-			rcMgr := clauderc.NewManager(project.ProjectPath)
-			if err := rcMgr.AddFile(ticketID+".md", dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
-			} else {
-				successMsg("Updated .clauderc")
 			}
 
 			// Add to ticket's linked projects

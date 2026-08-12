@@ -11,7 +11,6 @@ tomorrow. So you end up:
 - Re-explaining the ticket to Claude every session
 - Keeping notes in scratch files that pile up in the repo root
 - Losing the reasoning behind a decision by the time review comes around
-- Hand-rolling `.clauderc` so Claude actually reads those notes
 
 ## The Solution
 
@@ -20,7 +19,6 @@ tomorrow. So you end up:
 - **One file per ticket**: `CBP-123.md` in the project, version-controlled with your code
 - **Auto-detected from your branch**: `cctx ticket create` on branch `CBP-123` needs no arguments
 - **Companion docs travel with it**: `PLAN-CBP-123.md`, notes, scratch API docs — archived together
-- **`.clauderc` maintained for you**: Claude Code picks the context up with no manual wiring
 - **Archived, not deleted**: finished tickets move to `~/.cctx/contexts/_archived/`
 
 ## Who Should Use This
@@ -40,7 +38,7 @@ cd claude-context && make install && cctx admin init
 cd ~/my-service && git checkout -b CBP-123
 cctx ticket create
 
-# Creates CBP-123.md + SESSIONS.md, and adds them to .clauderc.
+# Creates CBP-123.md + SESSIONS.md in the project directory.
 # Now just tell Claude: "Let's work on the ticket"
 
 # When you're done — takes PLAN-CBP-123.md and friends with it
