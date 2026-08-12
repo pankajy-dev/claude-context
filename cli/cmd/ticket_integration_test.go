@@ -184,16 +184,16 @@ func Test_TicketLinkIntegration(t *testing.T) {
 	cfg.Tickets.Active = append(cfg.Tickets.Active, ticket)
 	h.configMgr.Save(cfg)
 
-	// Create ticket file
+	// Create ticket file in the data dir under its canonical name
 	ticketDir := filepath.Join(h.dataDir, "contexts", "_tickets", ticketID)
 	os.MkdirAll(ticketDir, 0755)
-	ticketFile := filepath.Join(ticketDir, "ticket.md")
+	ticketFile := filepath.Join(ticketDir, ticketID+".md")
 	os.WriteFile(ticketFile, []byte("# Ticket: "+ticketID), 0644)
 
-	// Now link it to project1 using the actual command
-	ticketFlag = ticketID
+	// Now link it to project1 using the actual command:
+	// ticket link <ticket-id> [project...]
 	cmd := &cobra.Command{}
-	args := []string{"project1"}
+	args := []string{ticketID, "project1"}
 
 	err := runTicketLink(cmd, args)
 	if err != nil {
@@ -207,7 +207,7 @@ func Test_TicketLinkIntegration(t *testing.T) {
 	h.VerifySymlink(project1Dir, ticketID, true)
 
 	// Link to project2 as well
-	args = []string{"project2"}
+	args = []string{ticketID, "project2"}
 	err = runTicketLink(cmd, args)
 	if err != nil {
 		t.Fatalf("runTicketLink to project2 failed: %v", err)
@@ -218,7 +218,48 @@ func Test_TicketLinkIntegration(t *testing.T) {
 	h.VerifyTicketLinkedToProject(ticketID, "project2", true)
 	h.VerifySymlink(project1Dir, ticketID, true)
 	h.VerifySymlink(project2Dir, ticketID, true)
+}
 
-	// Reset globals
-	ticketFlag = ""
+// Test_TicketLinkMissingFileIntegration verifies that linking a ticket whose
+// file is missing fails loudly instead of recording a link and writing a
+// .clauderc entry that points at a nonexistent file.
+func Test_TicketLinkMissingFileIntegration(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	projectDir := filepath.Join(h.tempDir, "project1")
+	os.MkdirAll(projectDir, 0755)
+	h.AddProject("project1", projectDir)
+
+	ticketID := "INTEGRATION-004"
+	dataDir = h.dataDir
+
+	cfg := h.GetConfig()
+	cfg.Tickets.Active = append(cfg.Tickets.Active, config.Ticket{
+		TicketID:       ticketID,
+		Title:          "Missing file test",
+		Status:         "active",
+		CreatedAt:      time.Now(),
+		LastModified:   time.Now(),
+		LinkedProjects: []config.LinkedProject{},
+	})
+	h.configMgr.Save(cfg)
+
+	// Deliberately create no ticket file, in the project or the data dir.
+	if err := runTicketLink(&cobra.Command{}, []string{ticketID, "project1"}); err != nil {
+		t.Fatalf("runTicketLink returned an unexpected error: %v", err)
+	}
+
+	h.VerifyTicketLinkedToProject(ticketID, "project1", false)
+
+	if _, err := os.Lstat(filepath.Join(projectDir, ".clauderc")); err == nil {
+		t.Error(".clauderc was created for a ticket with no file")
+	}
+
+	after := h.GetConfig()
+	for _, tk := range after.Tickets.Active {
+		if tk.TicketID == ticketID && tk.PrimaryContextName != "" {
+			t.Errorf("primary context was set to %q despite no ticket file", tk.PrimaryContextName)
+		}
+	}
 }

@@ -691,23 +691,27 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 		} else {
 			// For primary project, ensure concrete files are in project
 			if ticket.PrimaryContextName == projectName {
-				// Check if files already exist in primary project (new v2 tickets)
-				if common.FileExists(symlinkPath) && !common.IsSymlink(symlinkPath) {
+				switch {
+				case common.FileExists(symlinkPath) && !common.IsSymlink(symlinkPath):
+					// Files already exist in primary project (new v2 tickets)
 					successMsg("Concrete files already in primary project")
-				} else {
-					// Migrate from old location (data dir) if needed
-					if common.FileExists(ticketFile) && !common.IsSymlink(ticketFile) {
-						if err := common.CopyFile(ticketFile, symlinkPath); err != nil {
-							errorMsg(fmt.Sprintf("Failed to copy ticket file: %v", err))
-							continue
-						}
-						os.Remove(ticketFile)
-						// Create symlink in data dir pointing to project
-						if err := common.CreateSymlink(symlinkPath, ticketFile); err != nil {
-							warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
-						}
-						successMsg("Migrated ticket file to primary project")
+
+				case common.FileExists(symlinkPath):
+					// Symlink that still resolves (project used to be secondary)
+					infoMsg("Ticket file already reachable via symlink")
+
+				case common.FileExists(ticketFile) && !common.IsSymlink(ticketFile):
+					// Migrate from old location (data dir)
+					if err := common.CopyFile(ticketFile, symlinkPath); err != nil {
+						errorMsg(fmt.Sprintf("Failed to copy ticket file: %v", err))
+						continue
 					}
+					os.Remove(ticketFile)
+					// Create symlink in data dir pointing to project
+					if err := common.CreateSymlink(symlinkPath, ticketFile); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
+					}
+					successMsg("Migrated ticket file to primary project")
 
 					sessionsFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, "SESSIONS.md")
 					if common.FileExists(sessionsFile) && !common.IsSymlink(sessionsFile) {
@@ -721,6 +725,11 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 							successMsg("Migrated sessions file to primary project")
 						}
 					}
+
+				default:
+					// No file to link — don't record a link or add a dangling .clauderc entry
+					errorMsg(fmt.Sprintf("No ticket file found for %s (looked in %s and %s)", ticketID, symlinkPath, ticketFile))
+					continue
 				}
 			} else {
 				// Secondary project - create symlink to target
