@@ -86,8 +86,12 @@ make check
 │   │   └── python.md
 │   ├── _tickets/           # Ticket workspaces
 │   │   └── TICKET-123/
-│   │       └── ticket.md -> /path/to/project/TICKET-123.md
-│   └── _archived/          # Archived tickets
+│   │       ├── TICKET-123.md -> /path/to/project/TICKET-123.md
+│   │       └── SESSIONS.md  -> /path/to/project/SESSIONS.md
+│   └── _archived/          # Archived tickets, one dir per ticket
+│       └── 2026-08-12_TICKET-123/
+│           ├── TICKET-123.md
+│           └── PLAN-TICKET-123.md   # companions archived alongside
 └── templates/              # User template overrides
 ```
 
@@ -97,15 +101,33 @@ make check
 
 When creating a ticket:
 1. **Concrete file** created in project directory: `TICKET-123.md` (includes session tracking)
-2. **Symlink created in data directory**: `~/.cctx/contexts/_tickets/TICKET-123/ticket.md` → project concrete file
+2. **Symlink created in data directory**: `~/.cctx/contexts/_tickets/TICKET-123/TICKET-123.md` → project concrete file
 3. **Primary context** tracked in config: First linked project owns the concrete file
 4. **Other projects** get symlinks pointing to primary project's concrete file
+
+Files inside `_tickets/<ID>/` are named after the ticket (`TICKET-123.md`), not
+`ticket.md` — every code path builds the name as `ticketID + ".md"`.
 
 This design ensures:
 - Files are version-controlled with the project
 - Easy discovery (concrete files in project, not hidden in ~/.cctx)
 - Multiple projects can reference same ticket via symlinks
 - Deleting from primary project removes concrete files; deleting from secondary only removes symlinks
+
+### Ticket File Recognition
+
+A ticket owns more than one file: `TICKET-123.md` plus companions named after it
+(`PLAN-TICKET-123.md`, `TICKET-123-notes.txt`). Recognition lives in exactly one
+place, `cli/cmd/ticketfiles.go`:
+
+- `IsTicketFileName(filename, ticketID)` — whole-word, case-insensitive,
+  extension-agnostic match, so `TICKET-1230.md` does not match `TICKET-123`
+- `FindTicketFiles(dir, ticketID)` — the full working set, ticket file first
+- `FindExtraTicketFiles(dir, ticketID)` — companions only
+
+Archive, complete and delete all route through these. Never re-derive a ticket's
+filenames inline; that drift is what previously made `ticket archive` miss
+`PLAN-*.md` files.
 
 ### Configuration System
 

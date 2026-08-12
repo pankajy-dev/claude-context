@@ -261,8 +261,8 @@ cctx -t JIRA-123 ticket delete --force
 
 ```bash
 # Create a new global context
-cctx admin global create python --description "Python coding guidelines"
-cctx admin global create script --description "Shell scripting guidelines"
+cctx admin global init python --description "Python coding guidelines"
+cctx admin global init script --description "Shell scripting guidelines"
 ```
 
 ### Editing Global Contexts

@@ -577,17 +577,35 @@ var ticketLinkCmd = &cobra.Command{
 
 Creates symlinks in project directories and updates .clauderc automatically.
 
+With no arguments the ticket ID comes from --ticket/-t, CCTX_TICKET or the
+current git branch, and the project from --project/-p, CCTX_PROJECT or the
+current directory.
+
 Examples:
   cctx ticket link TICKET-123 api-gateway frontend
   cctx ticket link TICKET-123 --project api-gateway
-  cctx ticket link TICKET-123  # Auto-detects current project`,
-	Args: cobra.MinimumNArgs(1),
+  cctx ticket link TICKET-123          # Auto-detects current project
+  cctx ticket link                     # Auto-detects both
+  cctx -p frontend ticket link         # Auto-detects the ticket`,
+	Args: cobra.ArbitraryArgs,
 	RunE: runTicketLink,
 }
 
 func runTicketLink(cmd *cobra.Command, args []string) error {
-	// Get ticket ID from first argument
-	ticketID := args[0]
+	// Ticket ID comes from the first argument, or the usual flag/env/branch chain.
+	// Only an empty arg list falls back, so a lone argument is never mistaken
+	// for a project name.
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+		args = args[1:]
+	} else {
+		ticketID = GetTicketID()
+		if ticketID == "" {
+			return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
+		}
+		infoMsg(fmt.Sprintf("Using ticket: %s", ticketID))
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -595,9 +613,9 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 	// Determine project names from remaining args
 	projectNames := []string{}
 
-	if len(args) > 1 {
+	if len(args) > 0 {
 		// Projects specified as additional arguments
-		projectNames = args[1:]
+		projectNames = args
 	} else {
 		// Try to get from --project flag or env var
 		projectName, err := GetProjectContext(dataDir)
@@ -795,18 +813,32 @@ var ticketUnlinkCmd = &cobra.Command{
 
 Removes symlinks and updates .clauderc automatically.
 
+With no arguments the ticket ID comes from --ticket/-t, CCTX_TICKET or the
+current git branch.
+
 Examples:
   cctx ticket unlink TICKET-123 api-gateway frontend
   cctx ticket unlink TICKET-123 --project api-gateway
   cctx ticket unlink TICKET-123  # Auto-detects current project
+  cctx ticket unlink              # Auto-detects both
   cctx ticket unlink TICKET-123 --all  # Unlink from all projects`,
-	Args: cobra.MinimumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	RunE: runTicketUnlink,
 }
 
 func runTicketUnlink(cmd *cobra.Command, args []string) error {
-	// Get ticket ID from first argument
-	ticketID := args[0]
+	// Ticket ID from the first argument, or the flag/env/branch chain
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+		args = args[1:]
+	} else {
+		ticketID = GetTicketID()
+		if ticketID == "" {
+			return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
+		}
+		infoMsg(fmt.Sprintf("Using ticket: %s", ticketID))
+	}
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -832,9 +864,9 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 		for _, lp := range ticket.LinkedProjects {
 			projectNames = append(projectNames, lp.ContextName)
 		}
-	} else if len(args) > 1 {
+	} else if len(args) > 0 {
 		// Projects specified as additional arguments
-		projectNames = args[1:]
+		projectNames = args
 	} else {
 		// Try to get from --project flag or env var
 		projectName, err := GetProjectContext(dataDir)

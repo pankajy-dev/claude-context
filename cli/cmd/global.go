@@ -1120,6 +1120,4 @@ func runGlobalTemplatesSync(cmd *cobra.Command, args []string) error {
 	infoMsg(fmt.Sprintf("Templates location: %s/templates/", dataDir))
 
 	return nil
-
-	return nil
 }

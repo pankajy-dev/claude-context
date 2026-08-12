@@ -46,8 +46,12 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Expand all patterns against cwd
-	matched := map[string]struct{}{}
+	// Expand all patterns against cwd, keeping the order they were given in.
+	// filepath.Glob returns sorted matches, so a single "*.md" still lists
+	// alphabetically, while an explicit list (ticket archive passes the ticket
+	// file first) keeps its caller's ordering.
+	files := []string{}
+	seen := map[string]struct{}{}
 	for _, pattern := range args {
 		// If pattern has no path separator, glob inside cwd
 		if !filepath.IsAbs(pattern) && !strings.ContainsRune(pattern, filepath.Separator) {
@@ -62,22 +66,18 @@ func runArchive(cmd *cobra.Command, args []string) error {
 			if err != nil || info.IsDir() {
 				continue
 			}
-			matched[h] = struct{}{}
+			if _, dup := seen[h]; dup {
+				continue
+			}
+			seen[h] = struct{}{}
+			files = append(files, h)
 		}
 	}
 
-	if len(matched) == 0 {
+	if len(files) == 0 {
 		infoMsg("No files matched the given pattern(s)")
 		return nil
 	}
-
-	// Build ordered list for display
-	files := make([]string, 0, len(matched))
-	for f := range matched {
-		files = append(files, f)
-	}
-	// stable sort
-	sortStrings(files)
 
 	fmt.Println()
 	infoMsg(fmt.Sprintf("Found %d file(s) to archive:", len(files)))

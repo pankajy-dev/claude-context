@@ -1,32 +1,33 @@
 # Claude Context Manager
 
-**Stop copying the same instructions into every project. Manage your Claude context files in one place.**
+**A per-ticket context file for Claude Code, created on the branch you're working on and archived when you're done.**
 
 ## The Problem
 
-You work with Claude Code across multiple projects. Each project needs context files (`claude.md`, custom guidelines, ticket templates). You end up:
+You work a ticket in Claude Code. The requirements, the plan, the decisions you
+made three sessions ago — all of it lives in the chat, and the chat is gone
+tomorrow. So you end up:
 
-- Copying the same instructions into every project
-- Maintaining duplicates when you update your workflow
-- Losing track of which projects have which context
-- Manually managing ticket workspaces and session logs
-
-**There has to be a better way.**
+- Re-explaining the ticket to Claude every session
+- Keeping notes in scratch files that pile up in the repo root
+- Losing the reasoning behind a decision by the time review comes around
+- Hand-rolling `.clauderc` so Claude actually reads those notes
 
 ## The Solution
 
-`cctx` gives you centralized context management:
+`cctx` gives every ticket a file, and gets it in front of Claude automatically:
 
-- **Write once, use everywhere**: Create global contexts that work across all projects
-- **Project-specific contexts**: Manage per-project `claude.md` files from one place
-- **Ticket workflows**: Create temporary workspaces for Jira tickets with automatic session tracking
-- **Zero maintenance**: Symlinks keep projects in sync automatically
+- **One file per ticket**: `CBP-123.md` in the project, version-controlled with your code
+- **Auto-detected from your branch**: `cctx ticket create` on branch `CBP-123` needs no arguments
+- **Companion docs travel with it**: `PLAN-CBP-123.md`, notes, scratch API docs — archived together
+- **`.clauderc` maintained for you**: Claude Code picks the context up with no manual wiring
+- **Archived, not deleted**: finished tickets move to `~/.cctx/contexts/_archived/`
 
 ## Who Should Use This
 
-- **Individual developers** using Claude Code across multiple projects
-- **Teams** wanting consistent Claude guidelines across their codebase
-- **Anyone** tired of copying the same instructions between projects
+- **Developers using Claude Code on ticket-driven work** (Jira, Linear, GitHub issues)
+- **Anyone** whose repo root collects `PLAN-*.md` and scratch notes they later have to clean up
+- **Teams** who also want shared `claude.md` guidelines across projects (see [`cctx admin`](#project-contexts-legacy))
 
 ## Quick Example
 
@@ -35,52 +36,21 @@ You work with Claude Code across multiple projects. Each project needs context f
 git clone https://github.com/yourusername/claude-context.git
 cd claude-context && make install && cctx admin init
 
-# Create a global "Python best practices" context
-cctx admin global create python
-# Edit ~/.cctx/contexts/_global/python.md with your guidelines
+# Start work — ticket ID comes from the branch
+cd ~/my-service && git checkout -b CBP-123
+cctx ticket create
 
-# Link it to your projects
-cd ~/my-python-api && cctx admin global link python
-cd ~/my-data-pipeline && cctx admin global link python
+# Creates CBP-123.md + SESSIONS.md, and adds them to .clauderc.
+# Now just tell Claude: "Let's work on the ticket"
 
-# Now both projects automatically include your Python guidelines
-# Update once in ~/.cctx, both projects stay in sync
+# When you're done — takes PLAN-CBP-123.md and friends with it
+cctx ticket complete
+cctx ticket archive
 ```
 
-**That's it.** No more copying. No more drift.
+**That's it.** The context lives with the code, and the repo root stays clean.
 
 ## Common Workflows
-
-### Managing Projects
-
-```bash
-# Add a project (creates claude.md)
-cd my-project && cctx admin init
-
-# View all managed projects
-cctx project list
-
-# Remove project from management
-cd my-project && cctx admin unlink
-
-# Complete cleanup: remove all files, directories, and config entries
-cd my-project && cctx admin reset project
-```
-
-### Global Contexts (Share Across Projects)
-
-```bash
-# Create global contexts for common scenarios
-cctx admin global create script    # Shell script guidelines
-cctx admin global create python    # Python conventions
-cctx admin global create security  # Security review checklist
-
-# Link to projects that need them
-cd my-app && cctx admin global link python security
-
-# Update once, applies everywhere
-vim ~/.cctx/contexts/_global/python.md
-```
 
 ### Ticket Workflows (Jira Integration)
 
@@ -96,9 +66,18 @@ cd my-project && cctx ticket create PROJ-123
 # Link same ticket to another project
 cd related-service && cctx ticket link PROJ-123
 
-# Archive when done
-cctx ticket archive PROJ-123
+# See what you're working on
+cctx ticket list
+cctx ticket show PROJ-123
+
+# Wrap up — ticket ID auto-detected from the branch
+cctx ticket complete
+cctx ticket archive
 ```
+
+Ticket ID resolution is the same everywhere: an explicit argument wins, then
+`--ticket/-t`, then `CCTX_TICKET`, then the current git branch (unless it's
+`main`/`master`). So on branch `PROJ-123` every command above works bare.
 
 **After setup (see [Integrating with Claude Code](#integrating-with-claude-code))**, working on tickets becomes incredibly simple:
 
@@ -113,11 +92,69 @@ cctx ticket create
 That's it. Claude will:
 1. Auto-detect the ticket ID (from branch name, files, or context)
 2. Fetch full Jira details via MCP
-3. Update BEe-1234.md with requirements
+3. Update BEE-1234.md with requirements
 4. Start working on the ticket
 5. Log the session to SESSIONS.md automatically
 
 **No manual copy-pasting. No context switching. Just work.**
+
+### Archiving Files
+
+`cctx ticket archive` takes the ticket file **and every companion named after
+it** — `PLAN-PROJ-123.md`, `PROJ-123-notes.txt`, any extension — into a single
+archive directory. Unrelated files are left alone:
+
+```bash
+# Archives PROJ-123.md + PLAN-PROJ-123.md + PROJ-123-notes.txt together
+cctx ticket archive PROJ-123
+
+# Lists what matched and lets you pick: [Y/n/select], e.g. "1,3-4"
+# Preview first without moving anything
+cctx ticket archive PROJ-123 --dry-run
+```
+
+For loose files that aren't tied to a ticket, archive by name or glob:
+
+```bash
+cctx archive "v4-*.md"              # by pattern
+cctx archive old-design.md notes.md # by name
+cctx archive "*.md" --dry-run       # preview
+```
+
+Everything lands in `~/.cctx/contexts/_archived/` — moved out of your repo, not
+deleted.
+
+### Project Contexts (Legacy)
+
+The original feature: a shared `claude.md` per project, plus global contexts
+symlinked into many projects. Still supported, now under `cctx admin`.
+
+```bash
+# Add a project (creates claude.md)
+cd my-project && cctx admin init
+
+# View all managed projects
+cctx admin list
+
+# Remove project from management
+cd my-project && cctx admin unlink
+
+# Complete cleanup: remove all files, directories, and config entries
+cd my-project && cctx admin reset project
+```
+
+```bash
+# Create global contexts for common scenarios
+cctx admin global init script    # Shell script guidelines
+cctx admin global init python    # Python conventions
+cctx admin global init security  # Security review checklist
+
+# Link to projects that need them
+cd my-app && cctx admin global link python security
+
+# Update once, applies everywhere
+vim ~/.cctx/contexts/_global/python.md
+```
 
 ### Health & Maintenance
 
