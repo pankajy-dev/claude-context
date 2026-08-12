@@ -23,22 +23,22 @@ var homeCmd = &cobra.Command{
 By default, prints the path to the data directory.
 
 Common usage patterns:
-  cctx home                      # Print path: /Users/you/.cctx
-  cd $(cctx home)                # Navigate to data directory
-  ls $(cctx home)/contexts       # List all contexts
-  cctx home --list               # Show directory tree
-  cctx home --open               # Open in Finder/Explorer
-  cctx home --shell              # Start shell in data directory
+  cctx admin home                      # Print path: /Users/you/.cctx
+  cd $(cctx admin home)                # Navigate to data directory
+  ls $(cctx admin home)/contexts       # List all contexts
+  cctx admin home --list               # Show directory tree
+  cctx admin home --open               # Open in Finder/Explorer
+  cctx admin home --shell              # Start shell in data directory
 
 Useful for manual file management:
-  cd $(cctx home)/contexts/_tickets/TICKET-123
-  vim $(cctx home)/contexts/my-project/claude.md
-  rm -rf $(cctx home)/contexts/_archived/old-ticket`,
+  cd $(cctx admin home)/contexts/_tickets/TICKET-123
+  vim $(cctx admin home)/contexts/my-project/claude.md
+  rm -rf $(cctx admin home)/contexts/_archived/old-ticket`,
 	RunE: runHome,
 }
 
 func init() {
-	rootCmd.AddCommand(homeCmd)
+	adminCmd.AddCommand(homeCmd)
 	homeCmd.Flags().BoolVarP(&homeOpen, "open", "o", false, "Open data directory in file manager")
 	homeCmd.Flags().BoolVarP(&homeList, "list", "l", false, "List directory structure")
 	homeCmd.Flags().BoolVarP(&homeShell, "shell", "s", false, "Open a new shell in the data directory")
@@ -49,7 +49,7 @@ func runHome(cmd *cobra.Command, args []string) error {
 
 	// Check if data directory exists
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-		return fmt.Errorf("data directory not initialized: %s\nRun 'cctx init' first", dataDir)
+		return fmt.Errorf("data directory not initialized: %s\nRun 'cctx admin init' first", dataDir)
 	}
 
 	// Handle --shell flag

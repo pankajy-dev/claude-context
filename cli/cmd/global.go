@@ -89,10 +89,10 @@ var globalLinkCmd = &cobra.Command{
 Creates symlinks in the project directories and tracks the linkage in config.json.
 
 You can specify projects in multiple ways:
-  - As arguments: cctx global link script api-gateway frontend
+  - As arguments: cctx admin global link script api-gateway frontend
   - Using --project flag: cctx -p api-gateway global link script
-  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx global link script
-  - Use --all to link to all projects: cctx global link script --all`,
+  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx admin global link script
+  - Use --all to link to all projects: cctx admin global link script --all`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runGlobalLink,
 }
@@ -106,9 +106,9 @@ var globalUnlinkCmd = &cobra.Command{
 Removes symlinks from the project directories and updates config.json.
 
 You can specify projects in multiple ways:
-  - As arguments: cctx global unlink script api-gateway frontend
+  - As arguments: cctx admin global unlink script api-gateway frontend
   - Using --project flag: cctx -p api-gateway global unlink script
-  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx global unlink script`,
+  - Using CCTX_PROJECT env: export CCTX_PROJECT=api-gateway && cctx admin global unlink script`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runGlobalUnlink,
 }
@@ -152,8 +152,8 @@ var globalTemplatesResetCmd = &cobra.Command{
 This overwrites any customizations you've made to the template(s).
 
 Examples:
-  cctx global templates reset ticket    # Reset single template
-  cctx global templates reset --all     # Reset all templates`,
+  cctx admin global templates reset ticket    # Reset single template
+  cctx admin global templates reset --all     # Reset all templates`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGlobalTemplatesReset,
 }
@@ -169,12 +169,12 @@ Existing templates are never overwritten (use 'reset' for that).
 This is useful after upgrading cctx or when new templates are added.
 
 Example:
-  cctx global templates sync    # Add missing templates only`,
+  cctx admin global templates sync    # Add missing templates only`,
 	RunE: runGlobalTemplatesSync,
 }
 
 func init() {
-	rootCmd.AddCommand(globalCmd)
+	adminCmd.AddCommand(globalCmd)
 
 	// global init
 	globalCmd.AddCommand(globalInitCmd)
@@ -265,7 +265,7 @@ func runGlobalInit(cmd *cobra.Command, args []string) error {
 			templateContent, source, err := templates.GetTemplate(name, dataDir)
 			if err != nil {
 				warningMsg(fmt.Sprintf("Template '%s' not found, using default format", name))
-				infoMsg("Available templates: use 'cctx global templates list' to see all")
+				infoMsg("Available templates: use 'cctx admin global templates list' to see all")
 			} else {
 				content = string(templateContent)
 				if source == "user" {
@@ -354,7 +354,7 @@ func runGlobalList(cmd *cobra.Command, args []string) error {
 
 	if len(cfg.GlobalContexts) == 0 {
 		infoMsg("No global contexts found")
-		infoMsg("Create one with: cctx global init <name>")
+		infoMsg("Create one with: cctx admin global init <name>")
 		return nil
 	}
 
@@ -586,7 +586,7 @@ func runGlobalRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		successMsg(fmt.Sprintf("Successfully removed global context: %s", name))
 		infoMsg("Existing symlinks in projects may still exist")
-		infoMsg("Run 'cctx verify' to check")
+		infoMsg("Run 'cctx admin verify' to check")
 	}
 
 	return nil
@@ -975,10 +975,10 @@ func runGlobalTemplatesList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nTemplates location: %s/templates/\n", dataDir)
 	fmt.Printf("These are the source of truth - edit them directly to customize\n")
 	fmt.Printf("\nCommands:\n")
-	fmt.Printf("  cctx global templates show <name>   - View template content\n")
-	fmt.Printf("  cctx global templates reset <name>  - Reset one template to default\n")
-	fmt.Printf("  cctx global templates reset --all   - Reset all templates to defaults\n")
-	fmt.Printf("  cctx global templates sync          - Add missing templates (non-destructive)\n")
+	fmt.Printf("  cctx admin global templates show <name>   - View template content\n")
+	fmt.Printf("  cctx admin global templates reset <name>  - Reset one template to default\n")
+	fmt.Printf("  cctx admin global templates reset --all   - Reset all templates to defaults\n")
+	fmt.Printf("  cctx admin global templates sync          - Add missing templates (non-destructive)\n")
 
 	return nil
 }
@@ -994,7 +994,7 @@ func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
 	// Get template (checks user dir first, then embedded)
 	content, source, err := templates.GetTemplate(templateName, dataDir)
 	if err != nil {
-		return fmt.Errorf("%w\nAvailable templates: use 'cctx global templates list'", err)
+		return fmt.Errorf("%w\nAvailable templates: use 'cctx admin global templates list'", err)
 	}
 
 	// Display template info
@@ -1003,7 +1003,7 @@ func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Location: %s\n", templatePath)
 	if source == "embedded" {
 		warningMsg("Note: Using embedded fallback (templates directory missing?)")
-		infoMsg("Run 'cctx init' or 'cctx global templates sync' to populate templates")
+		infoMsg("Run 'cctx admin init' or 'cctx admin global templates sync' to populate templates")
 	}
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Println(string(content))
@@ -1012,7 +1012,7 @@ func runGlobalTemplatesShow(cmd *cobra.Command, args []string) error {
 	if source == "user" {
 		fmt.Println()
 		infoMsg(fmt.Sprintf("Edit: vim %s", templatePath))
-		infoMsg(fmt.Sprintf("Reset: cctx global templates reset %s", templateName))
+		infoMsg(fmt.Sprintf("Reset: cctx admin global templates reset %s", templateName))
 	}
 
 	return nil

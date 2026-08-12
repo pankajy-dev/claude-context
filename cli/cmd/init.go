@@ -39,13 +39,13 @@ This command:
 - Migrates from old installation if detected
 
 After initialization, use:
-  cctx link <project-path>  - Link your first project
-  cctx list                 - List managed projects`,
+  cctx admin link <project-path>  - Link your first project
+  cctx admin list                 - List managed projects`,
 	RunE: runInit,
 }
 
 func init() {
-	rootCmd.AddCommand(initCmd)
+	adminCmd.AddCommand(initCmd)
 	initCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force initialization even if directory exists")
 }
 
@@ -63,12 +63,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 			successMsg(fmt.Sprintf("✓ Already initialized at: %s", dataDir))
 			fmt.Println()
 			infoMsg("This directory is ready to use. Common commands:")
-			infoMsg("  cctx list          - List managed projects")
-			infoMsg("  cctx link <path>   - Link a new project")
-			infoMsg("  cctx verify        - Check symlink health")
+			infoMsg("  cctx admin list          - List managed projects")
+			infoMsg("  cctx admin link <path>   - Link a new project")
+			infoMsg("  cctx admin verify        - Check symlink health")
 			fmt.Println()
 			warningMsg("NOTE: This is NOT the same as Claude Code's /init command")
-			warningMsg("If you need to reinitialize (DANGEROUS), use: cctx init --force")
+			warningMsg("If you need to reinitialize (DANGEROUS), use: cctx admin init --force")
 			return nil
 		}
 
@@ -210,7 +210,7 @@ func initializeFresh(dataDir string) error {
 	copied, err := templates.CopyAllEmbeddedTemplates(dataDir, false)
 	if err != nil {
 		warningMsg(fmt.Sprintf("Warning: failed to copy templates: %v", err))
-		warningMsg("You can manually copy them later using: cctx global templates sync")
+		warningMsg("You can manually copy them later using: cctx admin global templates sync")
 	} else {
 		successMsg(fmt.Sprintf("Copied %d templates to %s/templates/", copied, dataDir))
 	}
@@ -219,12 +219,12 @@ func initializeFresh(dataDir string) error {
 	infoMsg("")
 	infoMsg(fmt.Sprintf("Templates location: %s/templates/", dataDir))
 	infoMsg("You can edit these templates directly - they are the source of truth")
-	infoMsg("View templates: cctx global templates list")
-	infoMsg("Reset a template: cctx global templates reset <name>")
+	infoMsg("View templates: cctx admin global templates list")
+	infoMsg("Reset a template: cctx admin global templates reset <name>")
 	infoMsg("")
 	infoMsg("Next steps:")
-	infoMsg("  1. Link your first project: cctx link /path/to/project")
-	infoMsg("  2. List managed projects: cctx list")
+	infoMsg("  1. Link your first project: cctx admin link /path/to/project")
+	infoMsg("  2. List managed projects: cctx admin list")
 	infoMsg("  3. Create a ticket workspace: cctx ticket create TICKET-123")
 
 	return nil
@@ -288,7 +288,7 @@ func migrateOldInstallation(oldConfigPath, dataDir string) error {
 	infoMsg("Updating symlinks...")
 	if err := updateSymlinks(dataDir); err != nil {
 		warningMsg(fmt.Sprintf("Some symlinks may need manual updating: %v", err))
-		warningMsg("Run 'cctx verify --fix' to fix broken symlinks")
+		warningMsg("Run 'cctx admin verify --fix' to fix broken symlinks")
 	}
 
 	successMsg("Migration complete!")

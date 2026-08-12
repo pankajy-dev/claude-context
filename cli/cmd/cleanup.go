@@ -41,7 +41,7 @@ Use --dry-run to preview what would be cleaned without making changes.`,
 }
 
 func init() {
-	rootCmd.AddCommand(cleanupCmd)
+	adminCmd.AddCommand(cleanupCmd)
 	cleanupCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Skip confirmation prompts")
 	cleanupCmd.Flags().BoolVarP(&cleanupRestore, "restore", "r", false, "Restore orphaned items to config.json instead of deleting")
 }
@@ -348,7 +348,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		fmt.Println("  1. DELETE: Remove orphaned items from filesystem (default)")
 		fmt.Println("  2. RESTORE: Add orphaned items back to config.json")
 		fmt.Println()
-		fmt.Println("To restore instead of delete, use: cctx cleanup --restore")
+		fmt.Println("To restore instead of delete, use: cctx admin cleanup --restore")
 		fmt.Println("=" + strings.Repeat("=", 60))
 		fmt.Println()
 	}
@@ -378,7 +378,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			fmt.Println("  • Symlinks → Cannot be restored (manual cleanup needed)")
 		} else {
 			infoMsg("DRY RUN: Delete mode - no changes will be made")
-			fmt.Println("\nTo restore instead of delete, use: cctx cleanup --restore --dry-run")
+			fmt.Println("\nTo restore instead of delete, use: cctx admin cleanup --restore --dry-run")
 		}
 		fmt.Println("=" + strings.Repeat("=", 60))
 

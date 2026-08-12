@@ -24,7 +24,7 @@ Requires confirmation before proceeding.`,
 }
 
 func init() {
-	rootCmd.AddCommand(syncCmd)
+	adminCmd.AddCommand(syncCmd)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {

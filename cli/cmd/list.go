@@ -23,7 +23,7 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(listCmd)
+	adminCmd.AddCommand(listCmd)
 	listCmd.Flags().BoolVarP(&listBroken, "broken", "b", false, "Show only broken links")
 }
 

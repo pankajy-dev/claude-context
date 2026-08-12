@@ -7,7 +7,7 @@ Complete guide to using `cctx` for managing context files across your projects.
 ### 1. Initialize
 
 ```bash
-cctx init
+cctx admin init
 ```
 
 This creates `~/.cctx/` with the necessary structure.
@@ -16,7 +16,7 @@ This creates `~/.cctx/` with the necessary structure.
 
 ```bash
 cd /path/to/your/project
-cctx link .
+cctx admin link .
 ```
 
 This creates:
@@ -52,14 +52,14 @@ cctx <TAB>
 cctx ticket <TAB>
 # Shows: archive-all  complete  create  delete  link  list  show
 
-cctx global <TAB>
+cctx admin global <TAB>
 # Shows: create  disable  enable  link  list  unlink
 ```
 
 ### Complete Flags (type -- first)
 
 ```bash
-cctx cleanup --<TAB>
+cctx admin cleanup --<TAB>
 # Shows: --data-dir  --dry-run  --force  --help  --project  --restore  --ticket  --verbose
 
 cctx --<TAB>
@@ -75,7 +75,7 @@ cctx ticket create --<TAB>
 cctx -<TAB>
 # Shows: -d  -h  -p  -t  -v
 
-cctx cleanup -<TAB>
+cctx admin cleanup -<TAB>
 # Shows: -f  -h  -r  (plus global: -d, -p, -t, -v)
 ```
 
@@ -83,10 +83,10 @@ cctx cleanup -<TAB>
 
 ```bash
 cctx cle<TAB>
-# Completes to: cctx cleanup
+# Completes to: cctx admin cleanup
 
-cctx cleanup --fo<TAB>
-# Completes to: cctx cleanup --force
+cctx admin cleanup --fo<TAB>
+# Completes to: cctx admin cleanup --force
 
 cctx ticket cr<TAB>
 # Completes to: cctx ticket create
@@ -95,7 +95,7 @@ cctx ticket cr<TAB>
 ### Smart Context Completion
 
 ```bash
-cctx unlink <TAB>
+cctx admin unlink <TAB>
 # Shows your managed project names
 
 cctx -p <TAB>
@@ -104,7 +104,7 @@ cctx -p <TAB>
 cctx -t <TAB>
 # Shows your active ticket IDs
 
-cctx global link <TAB>
+cctx admin global link <TAB>
 # Shows available global context names
 ```
 
@@ -116,60 +116,60 @@ cctx global link <TAB>
 
 ```bash
 # Link current directory
-cctx link .
+cctx admin link .
 
 # Link specific project with auto-generated name
-cctx link /path/to/project
+cctx admin link /path/to/project
 
 # Link with custom name
-cctx link /path/to/project my-custom-name
+cctx admin link /path/to/project my-custom-name
 ```
 
 ### Listing Projects
 
 ```bash
 # Simple list
-cctx list
+cctx admin list
 
 # Detailed information
-cctx list --verbose
+cctx admin list --verbose
 ```
 
 ### Unlinking Projects
 
 ```bash
 # Unlink and delete context file
-cctx unlink project-name
+cctx admin unlink project-name
 
 # Unlink but keep the context file in ~/.cctx
-cctx unlink project-name --keep-content
+cctx admin unlink project-name --keep-content
 ```
 
 ### Health Checks
 
 ```bash
 # Check all symlinks
-cctx verify
+cctx admin verify
 
 # Auto-repair broken symlinks
-cctx verify --fix
+cctx admin verify --fix
 ```
 
 ### Cleanup
 
 ```bash
 # Interactive cleanup (shows both delete and restore options)
-cctx cleanup
+cctx admin cleanup
 
 # Preview without making changes
-cctx cleanup --dry-run --verbose
+cctx admin cleanup --dry-run --verbose
 
 # Delete orphaned items (skip confirmation)
-cctx cleanup --force
+cctx admin cleanup --force
 
 # Restore orphaned items to config.json
-cctx cleanup --restore
-cctx cleanup --restore --force
+cctx admin cleanup --restore
+cctx admin cleanup --restore --force
 ```
 
 ## Ticket Workspaces
@@ -261,8 +261,8 @@ cctx -t JIRA-123 ticket delete --force
 
 ```bash
 # Create a new global context
-cctx global create python --description "Python coding guidelines"
-cctx global create script --description "Shell scripting guidelines"
+cctx admin global create python --description "Python coding guidelines"
+cctx admin global create script --description "Shell scripting guidelines"
 ```
 
 ### Editing Global Contexts
@@ -276,31 +276,31 @@ vim ~/.cctx/contexts/_global/python.md
 
 ```bash
 # Enable globally (all new projects get it)
-cctx global enable python
+cctx admin global enable python
 
 # Disable globally
-cctx global disable python
+cctx admin global disable python
 ```
 
 ### Linking Global Contexts to Projects
 
 ```bash
 # Link to specific projects only
-cctx global link python my-project
-cctx global link script my-project another-project
+cctx admin global link python my-project
+cctx admin global link script my-project another-project
 
 # Unlink from a project
-cctx global unlink python my-project
+cctx admin global unlink python my-project
 ```
 
 ### Listing Global Contexts
 
 ```bash
 # Simple list
-cctx global list
+cctx admin global list
 
 # Detailed information
-cctx global list --verbose
+cctx admin global list --verbose
 ```
 
 ## Working with Templates
@@ -309,28 +309,28 @@ cctx global list --verbose
 
 ```bash
 # List all available templates
-cctx global templates list
+cctx admin global templates list
 
 # Show template sources (user/embedded) and paths
-cctx global templates list --verbose
+cctx admin global templates list --verbose
 ```
 
 ### Viewing Template Content
 
 ```bash
 # View templates
-cctx global templates show default       # Default project template
-cctx global templates show global        # Global context template
-cctx global templates show ticket        # Ticket workspace template
-cctx global templates show sessions      # Session tracking template
-cctx global templates show script        # Script writing guidelines
+cctx admin global templates show default       # Default project template
+cctx admin global templates show global        # Global context template
+cctx admin global templates show ticket        # Ticket workspace template
+cctx admin global templates show sessions      # Session tracking template
+cctx admin global templates show script        # Script writing guidelines
 ```
 
 ### Customizing Templates
 
 ```bash
 # Copy embedded template for customization
-cp $(cctx home)/embedded-template.md ~/.cctx/templates/custom-name.md
+cp $(cctx admin home)/embedded-template.md ~/.cctx/templates/custom-name.md
 
 # Or manually create in ~/.cctx/templates/
 vim ~/.cctx/templates/my-custom.md
@@ -346,42 +346,42 @@ vim ~/.cctx/templates/my-custom.md
 
 ```bash
 # Print path to data directory
-cctx home
+cctx admin home
 
 # Navigate to data directory
-cd $(cctx home)
+cd $(cctx admin home)
 
 # Show directory tree
-cctx home --list
+cctx admin home --list
 
 # Open in file manager
-cctx home --open
+cctx admin home --open
 
 # Open new shell in data directory
-cctx home --shell
+cctx admin home --shell
 
 # Useful patterns
-cd $(cctx home)/contexts/_tickets    # Navigate to tickets
-ls $(cctx home)/contexts              # List all contexts
+cd $(cctx admin home)/contexts/_tickets    # Navigate to tickets
+ls $(cctx admin home)/contexts              # List all contexts
 ```
 
 ### Manual Navigation
 
 ```bash
 # Navigate to data directory
-cd $(cctx home)
+cd $(cctx admin home)
 
 # List contexts
-ls $(cctx home)/contexts
+ls $(cctx admin home)/contexts
 
 # Navigate to specific ticket
-cd $(cctx home)/contexts/_tickets/JIRA-123
+cd $(cctx admin home)/contexts/_tickets/JIRA-123
 
 # Edit context file
-vim $(cctx home)/contexts/my-project/claude.md
+vim $(cctx admin home)/contexts/my-project/claude.md
 
 # Remove archived ticket
-rm -rf $(cctx home)/contexts/_archived/old-ticket
+rm -rf $(cctx admin home)/contexts/_archived/old-ticket
 ```
 
 ## Environment Variables and Flags
@@ -401,7 +401,7 @@ export CCTX_DATA_DIR=/custom/path
 # Now commands use these defaults
 cctx ticket show                    # Uses JIRA-123
 cctx ticket link                    # Links JIRA-123 to my-project
-cctx list                           # Uses /custom/path
+cctx admin list                           # Uses /custom/path
 ```
 
 ### Using Flags
@@ -442,7 +442,7 @@ Each ticket workspace automatically includes a `SESSIONS.md` file for tracking i
 Created cleanup command with delete and restore modes.
 
 ### What Was Done
-- Implemented cctx cleanup with --restore flag
+- Implemented cctx admin cleanup with --restore flag
 - Fixed shell completion ordering in zshrc
 - Updated documentation
 
@@ -452,8 +452,8 @@ Created cleanup command with delete and restore modes.
 
 ### Commands Used
 ```bash
-cctx cleanup --dry-run --verbose
-cctx cleanup --restore
+cctx admin cleanup --dry-run --verbose
+cctx admin cleanup --restore
 ```
 ```
 
@@ -501,7 +501,7 @@ my-project/
 
 ```bash
 # You create a context
-cctx link ~/my-app
+cctx admin link ~/my-app
 
 # This creates:
 # - ~/.cctx/contexts/my-app/claude.md (actual file)
@@ -548,8 +548,8 @@ include:
 
 ### For Maintenance
 
-1. **Run verify regularly**: `cctx verify --fix` to keep symlinks healthy
-2. **Clean up orphans**: `cctx cleanup --dry-run --verbose` to preview, then clean
+1. **Run verify regularly**: `cctx admin verify --fix` to keep symlinks healthy
+2. **Clean up orphans**: `cctx admin cleanup --dry-run --verbose` to preview, then clean
 3. **Backup your data**: Regularly backup `~/.cctx/` directory
 
 ## Why Use This?
@@ -617,18 +617,18 @@ cctx ticket archive-all --force
 export CCTX_DATA_DIR=/mnt/shared/contexts
 
 # Initialize
-cctx init
+cctx admin init
 
 # All commands now use custom location
-cctx link .
-cctx list
+cctx admin link .
+cctx admin list
 ```
 
 ### Migrating from Old Version
 
 ```bash
 # Simply run init - auto-detects and migrates
-cctx init
+cctx admin init
 
 # Migration moves:
 # - config.json → ~/.cctx/config.json
@@ -660,7 +660,7 @@ export CCTX_DATA_DIR=/custom/path
 Always preview before destructive operations:
 
 ```bash
-cctx cleanup --dry-run --verbose
+cctx admin cleanup --dry-run --verbose
 cctx ticket archive-all --dry-run
 ```
 
@@ -669,6 +669,6 @@ cctx ticket archive-all --dry-run
 If you accidentally removed entries from config.json:
 
 ```bash
-cctx cleanup --restore --dry-run  # Preview
-cctx cleanup --restore            # Restore
+cctx admin cleanup --restore --dry-run  # Preview
+cctx admin cleanup --restore            # Restore
 ```

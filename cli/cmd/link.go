@@ -28,7 +28,7 @@ and any global context files.`,
 }
 
 func init() {
-	rootCmd.AddCommand(linkCmd)
+	adminCmd.AddCommand(linkCmd)
 }
 
 func runLink(cmd *cobra.Command, args []string) error {

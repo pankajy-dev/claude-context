@@ -184,3 +184,49 @@ func completeTemplateNames(cmd *cobra.Command, args []string, toComplete string)
 	}
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
+
+// completionCmd replaces cobra's default top-level 'completion' command so it
+// lives under 'cctx admin' with the rest of the setup tasks. The generated
+// scripts are for the root command either way, so nesting the generator does
+// not change their contents.
+var completionCmd = &cobra.Command{
+	Use:   "completion <bash|zsh|fish|powershell>",
+	Short: "Generate the autocompletion script for the specified shell",
+	Long: `Generate a shell completion script for cctx.
+
+Completion covers commands, flags, ticket IDs, project names and global
+context names.
+
+  # zsh (add to ~/.zshrc, or write to a directory in $fpath)
+  cctx admin completion zsh > "${fpath[1]}/_cctx"
+
+  # bash
+  cctx admin completion bash > /usr/local/etc/bash_completion.d/cctx
+
+  # fish
+  cctx admin completion fish > ~/.config/fish/completions/cctx.fish
+
+Start a new shell for the changes to take effect.`,
+	Args:      cobra.ExactArgs(1),
+	ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		switch args[0] {
+		case "bash":
+			return rootCmd.GenBashCompletionV2(os.Stdout, true)
+		case "zsh":
+			return rootCmd.GenZshCompletion(os.Stdout)
+		case "fish":
+			return rootCmd.GenFishCompletion(os.Stdout, true)
+		case "powershell":
+			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+		}
+		return nil
+	},
+}
+
+func init() {
+	// Drop cobra's top-level 'completion' command in favour of the one above.
+	// This does not affect __complete, which powers dynamic completion.
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	adminCmd.AddCommand(completionCmd)
+}

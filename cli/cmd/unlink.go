@@ -26,7 +26,7 @@ Requires confirmation before proceeding.`,
 }
 
 func init() {
-	rootCmd.AddCommand(unlinkCmd)
+	adminCmd.AddCommand(unlinkCmd)
 	unlinkCmd.Flags().BoolVar(&keepContent, "keep-content", false, "Keep context file, only remove symlink and config entry")
 }
 

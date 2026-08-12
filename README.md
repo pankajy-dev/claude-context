@@ -33,15 +33,15 @@ You work with Claude Code across multiple projects. Each project needs context f
 ```bash
 # Install and initialize
 git clone https://github.com/yourusername/claude-context.git
-cd claude-context && make install && cctx init
+cd claude-context && make install && cctx admin init
 
 # Create a global "Python best practices" context
-cctx global create python
+cctx admin global create python
 # Edit ~/.cctx/contexts/_global/python.md with your guidelines
 
 # Link it to your projects
-cd ~/my-python-api && cctx global link python
-cd ~/my-data-pipeline && cctx global link python
+cd ~/my-python-api && cctx admin global link python
+cd ~/my-data-pipeline && cctx admin global link python
 
 # Now both projects automatically include your Python guidelines
 # Update once in ~/.cctx, both projects stay in sync
@@ -55,28 +55,28 @@ cd ~/my-data-pipeline && cctx global link python
 
 ```bash
 # Add a project (creates claude.md)
-cd my-project && cctx init
+cd my-project && cctx admin init
 
 # View all managed projects
 cctx project list
 
 # Remove project from management
-cd my-project && cctx unlink
+cd my-project && cctx admin unlink
 
 # Complete cleanup: remove all files, directories, and config entries
-cd my-project && cctx reset project
+cd my-project && cctx admin reset project
 ```
 
 ### Global Contexts (Share Across Projects)
 
 ```bash
 # Create global contexts for common scenarios
-cctx global create script    # Shell script guidelines
-cctx global create python    # Python conventions
-cctx global create security  # Security review checklist
+cctx admin global create script    # Shell script guidelines
+cctx admin global create python    # Python conventions
+cctx admin global create security  # Security review checklist
 
 # Link to projects that need them
-cd my-app && cctx global link python security
+cd my-app && cctx admin global link python security
 
 # Update once, applies everywhere
 vim ~/.cctx/contexts/_global/python.md
@@ -123,19 +123,19 @@ That's it. Claude will:
 
 ```bash
 # Check for broken symlinks
-cctx verify
-cctx verify --fix  # Auto-repair
+cctx admin verify
+cctx admin verify --fix  # Auto-repair
 
 # Clean up orphaned data
-cctx cleanup --dry-run
-cctx cleanup  # Delete orphans
+cctx admin cleanup --dry-run
+cctx admin cleanup  # Delete orphans
 ```
 
 ### Reset & Complete Cleanup
 
 ```bash
 # Reset a single project (removes everything)
-cctx reset project my-project
+cctx admin reset project my-project
 # Removes:
 # - All files from project directory (symlinks, tickets, .clauderc)
 # - Project context from ~/.cctx/contexts/my-project/
@@ -144,19 +144,19 @@ cctx reset project my-project
 # - All ticket linkages
 
 # Clean up current directory (even if not registered)
-cd some-project && cctx reset project
+cd some-project && cctx admin reset project
 # Works even if project isn't in config.json
 # Cleans up any cctx-managed files (tickets, symlinks, .clauderc)
 
 # Reset all projects (nuclear option)
-cctx reset all
+cctx admin reset all
 # Removes all files from all projects + entire ~/.cctx directory
 
 # Keep config but remove all contexts
-cctx reset all --keep-config
+cctx admin reset all --keep-config
 
 # Preview changes first (always recommended)
-cctx reset project --dry-run -v
+cctx admin reset project --dry-run -v
 ```
 
 ## Documentation
@@ -182,7 +182,7 @@ hash -r  # or: rehash
 export PATH="$HOME/bin:$PATH"
 
 # Initialize data directory
-cctx init
+cctx admin init
 ```
 
 **That's it.** You're ready to go.
@@ -209,25 +209,25 @@ Enable tab completion for `cctx` commands:
 
 **Zsh (macOS):**
 ```bash
-cctx completion zsh > $(brew --prefix)/share/zsh/site-functions/_cctx
+cctx admin completion zsh > $(brew --prefix)/share/zsh/site-functions/_cctx
 exec zsh
 ```
 
 **Zsh (Linux):**
 ```bash
-cctx completion zsh > "${fpath[1]}/_cctx"
+cctx admin completion zsh > "${fpath[1]}/_cctx"
 source ~/.zshrc
 ```
 
 **Bash:**
 ```bash
-cctx completion bash > ~/.bash_completion.d/cctx
+cctx admin completion bash > ~/.bash_completion.d/cctx
 source ~/.bashrc
 ```
 
 **Fish:**
 ```bash
-cctx completion fish > ~/.config/fish/completions/cctx.fish
+cctx admin completion fish > ~/.config/fish/completions/cctx.fish
 ```
 
 **Tip:** Type `cctx <TAB>` to see available commands. See [TUTORIAL.md](TUTORIAL.md#shell-completion-usage) for details.
@@ -293,12 +293,12 @@ Templates are embedded in the binary and update when you update the tool.
 
 ```bash
 # View available templates
-cctx global templates list
+cctx admin global templates list
 
 # View template content
-cctx global templates show default
-cctx global templates show ticket
-cctx global templates show sessions
+cctx admin global templates show default
+cctx admin global templates show ticket
+cctx admin global templates show sessions
 
 # Create custom override
 vim ~/.cctx/templates/default.md
@@ -313,7 +313,7 @@ Use a custom location for data storage:
 ```bash
 # Using environment variable (recommended)
 export CCTX_DATA_DIR=/path/to/your/data
-cctx init
+cctx admin init
 
 # Or using flag
 cctx --data-dir /path/to/data init
@@ -399,7 +399,7 @@ For any ticket matching pattern `(CBP|BEE)-\d+`:
 ### "Data directory not initialized"
 
 ```bash
-cctx init
+cctx admin init
 ```
 
 ### Old Binary Cached After Update
@@ -417,23 +417,23 @@ rehash          # For zsh (alternative)
 
 ```bash
 # Check health
-cctx verify
+cctx admin verify
 
 # Auto-repair
-cctx verify --fix
+cctx admin verify --fix
 ```
 
 ### Orphaned Symlinks or Stale Data
 
 ```bash
 # Preview what would be cleaned
-cctx cleanup --dry-run --verbose
+cctx admin cleanup --dry-run --verbose
 
 # Option 1: Delete orphaned items
-cctx cleanup
+cctx admin cleanup
 
 # Option 2: Restore orphaned items to config.json
-cctx cleanup --restore
+cctx admin cleanup --restore
 ```
 
 ### Command Not Found

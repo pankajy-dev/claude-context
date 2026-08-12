@@ -34,7 +34,7 @@ With --fix flag, prompts you to either:
 }
 
 func init() {
-	rootCmd.AddCommand(verifyCmd)
+	adminCmd.AddCommand(verifyCmd)
 	verifyCmd.Flags().BoolVar(&autoFix, "fix", false, "Automatically fix issues where possible (requires confirmation)")
 }
 

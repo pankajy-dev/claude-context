@@ -45,9 +45,9 @@ This is useful for:
   - Removing all dangling files across all projects
 
 Examples:
-  cctx reset all                    # Complete reset (removes ~/.cctx)
-  cctx reset all --keep-config      # Keep config, remove all contexts
-  cctx reset all --dry-run          # Preview what would be removed`,
+  cctx admin reset all                    # Complete reset (removes ~/.cctx)
+  cctx admin reset all --keep-config      # Keep config, remove all contexts
+  cctx admin reset all --dry-run          # Preview what would be removed`,
 	RunE: runResetAll,
 }
 
@@ -77,16 +77,16 @@ This is useful for:
   - Cleaning up directories with only ticket files
 
 Examples:
-  cctx reset project                    # Clean current project
-  cctx reset project my-project         # Clean specific project
-  cctx reset project --keep-clauderc    # Keep .clauderc file
-  cctx reset project --dry-run -v       # Preview what will be removed`,
+  cctx admin reset project                    # Clean current project
+  cctx admin reset project my-project         # Clean specific project
+  cctx admin reset project --keep-clauderc    # Keep .clauderc file
+  cctx admin reset project --dry-run -v       # Preview what will be removed`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runResetProject,
 }
 
 func init() {
-	rootCmd.AddCommand(resetCmd)
+	adminCmd.AddCommand(resetCmd)
 
 	// reset all
 	resetCmd.AddCommand(resetAllCmd)
@@ -349,10 +349,10 @@ func runResetAll(cmd *cobra.Command, args []string) error {
 
 	if resetKeepConfig {
 		infoMsg("Config.json and templates preserved")
-		infoMsg("Run 'cctx init' to recreate context directories")
+		infoMsg("Run 'cctx admin init' to recreate context directories")
 	} else {
 		infoMsg("All cctx data has been removed")
-		infoMsg("Run 'cctx init' to start fresh")
+		infoMsg("Run 'cctx admin init' to start fresh")
 	}
 
 	return nil

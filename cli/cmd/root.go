@@ -21,15 +21,20 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "cctx",
-	Short: "Claude Context Manager - Centralized claude.md management",
+	Short: "Claude Context Manager - ticket workspaces for Claude Code",
 	Long: `Claude Context Manager
 
-A centralized management system for claude.md context files across multiple
-projects using symlinks. Store all context files in one repository while
-keeping projects clean.
+Manage per-ticket context files for Claude Code. Each ticket gets a concrete
+<TICKET-ID>.md in the project directory, tracked centrally in ~/.cctx, with
+.clauderc updated so Claude Code picks it up automatically.
 
-The tool automatically manages .clauderc files to ensure Claude Code includes
-all relevant context files (claude.md, global.md, and ticket files).`,
+  cctx ticket create CBP-123     Start work on a ticket
+  cctx ticket complete           Wrap it up (auto-detects from branch)
+  cctx ticket archive CBP-123    Archive the ticket and its companion docs
+  cctx archive "*.md"            Archive loose files from the current directory
+
+Setup, maintenance and the older project-wide claude.md symlink feature live
+under 'cctx admin'.`,
 	Version: "2.0.0",
 }
 
@@ -112,7 +117,7 @@ func GetDataDirOrExit() string {
 	configPath := filepath.Join(dataDir, "config.json")
 	if !common.FileExists(configPath) {
 		errorMsg(fmt.Sprintf("Data directory not initialized: %s", dataDir))
-		errorMsg("Run 'cctx init' to initialize")
+		errorMsg("Run 'cctx admin init' to initialize")
 		os.Exit(1)
 	}
 
