@@ -10,11 +10,11 @@ import (
 
 // Config represents the main configuration structure
 type Config struct {
-	ManagedProjects       []Project        `json:"managed_projects"`
-	GlobalContexts        []GlobalContext  `json:"global_contexts"`
-	Tickets               TicketSection    `json:"tickets"`
-	Settings              Settings         `json:"settings"`
-	CurrentWorkingTickets []CurrentTicket  `json:"current_working_tickets,omitempty"` // Support multiple concurrent tickets
+	ManagedProjects       []Project       `json:"managed_projects"`
+	GlobalContexts        []GlobalContext `json:"global_contexts"`
+	Tickets               TicketSection   `json:"tickets"`
+	Settings              Settings        `json:"settings"`
+	CurrentWorkingTickets []CurrentTicket `json:"current_working_tickets,omitempty"` // Support multiple concurrent tickets
 }
 
 // Project represents a managed project
@@ -38,8 +38,8 @@ type GlobalContext struct {
 
 // TicketSection contains ticket-related configuration
 type TicketSection struct {
-	Active   []Ticket `json:"active"`
-	Archived []Ticket `json:"archived"`
+	Active   []Ticket       `json:"active"`
+	Archived []Ticket       `json:"archived"`
 	Settings TicketSettings `json:"settings"`
 }
 
@@ -82,8 +82,8 @@ type TicketSettings struct {
 
 // Settings contains global settings
 type Settings struct {
-	AutoCommit      bool `json:"auto_commit"`
-	BackupOnUnlink  bool `json:"backup_on_unlink"`
+	AutoCommit     bool `json:"auto_commit"`
+	BackupOnUnlink bool `json:"backup_on_unlink"`
 }
 
 // Manager handles config file operations

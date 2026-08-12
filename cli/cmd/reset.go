@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	resetKeepConfig     bool
-	resetKeepClauderc   bool
-	resetForce          bool
+	resetKeepConfig   bool
+	resetKeepClauderc bool
+	resetForce        bool
 )
 
 var resetCmd = &cobra.Command{

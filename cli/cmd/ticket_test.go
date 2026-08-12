@@ -54,8 +54,8 @@ func NewTestHelper(t *testing.T) *TestHelper {
 			},
 		},
 		Settings: config.Settings{
-			AutoCommit:      false,
-			BackupOnUnlink:  true,
+			AutoCommit:     false,
+			BackupOnUnlink: true,
 		},
 	}
 
@@ -567,10 +567,10 @@ func Test_TicketComplete(t *testing.T) {
 	os.Rename(ticketDir, archivedDir)
 
 	// Verify
-	h.VerifyTicketInConfig(ticketID, false) // Should not be in active
-	h.VerifyTicketArchived(ticketID)       // Should be in archived
+	h.VerifyTicketInConfig(ticketID, false)        // Should not be in active
+	h.VerifyTicketArchived(ticketID)               // Should be in archived
 	h.VerifySymlink(h.projectDir, ticketID, false) // Symlink should be removed
-	h.VerifyTicketDirectory(ticketID, false) // Original directory should be gone
+	h.VerifyTicketDirectory(ticketID, false)       // Original directory should be gone
 
 	// Verify archived directory exists
 	if _, err := os.Stat(archivedDir); os.IsNotExist(err) {

@@ -262,4 +262,3 @@ func DetectCaseVariant(dir string, variants ...string) string {
 	// Return first variant as default
 	return variants[0]
 }
-

@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	homeOpen   bool
-	homeList   bool
-	homeShell  bool
+	homeOpen  bool
+	homeList  bool
+	homeShell bool
 )
 
 var homeCmd = &cobra.Command{
