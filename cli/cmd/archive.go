@@ -46,32 +46,9 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Expand all patterns against cwd, keeping the order they were given in.
-	// filepath.Glob returns sorted matches, so a single "*.md" still lists
-	// alphabetically, while an explicit list (ticket archive passes the ticket
-	// file first) keeps its caller's ordering.
-	files := []string{}
-	seen := map[string]struct{}{}
-	for _, pattern := range args {
-		// If pattern has no path separator, glob inside cwd
-		if !filepath.IsAbs(pattern) && !strings.ContainsRune(pattern, filepath.Separator) {
-			pattern = filepath.Join(cwd, pattern)
-		}
-		hits, err := filepath.Glob(pattern)
-		if err != nil {
-			return fmt.Errorf("invalid pattern %q: %w", pattern, err)
-		}
-		for _, h := range hits {
-			info, err := os.Lstat(h)
-			if err != nil || info.IsDir() {
-				continue
-			}
-			if _, dup := seen[h]; dup {
-				continue
-			}
-			seen[h] = struct{}{}
-			files = append(files, h)
-		}
+	files, err := matchArchiveFiles(cwd, args)
+	if err != nil {
+		return err
 	}
 
 	if len(files) == 0 {
@@ -156,6 +133,55 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	successMsg(fmt.Sprintf("Archived %d file(s)", archivedCount))
 	return nil
+}
+
+// matchArchiveFiles expands patterns against cwd, keeping the order they were
+// given in. filepath.Glob returns sorted matches, so a single "*.md" still
+// lists alphabetically, while an explicit list (ticket archive passes the
+// ticket file first) keeps its caller's ordering.
+//
+// A bare ticket ID like "SECO-5669" has no extension and no glob
+// metacharacters, so it never literally matches SECO-5669.md via Glob. For
+// those, fall back to whole-word ticket file matching so `cctx archive
+// SECO-5669` behaves like `cctx archive SECO-5669.md` and also picks up
+// companions such as prefix-SECO-5669-suffix.md.
+func matchArchiveFiles(cwd string, patterns []string) ([]string, error) {
+	files := []string{}
+	seen := map[string]struct{}{}
+	addFile := func(h string) {
+		info, err := os.Lstat(h)
+		if err != nil || info.IsDir() {
+			return
+		}
+		if _, dup := seen[h]; dup {
+			return
+		}
+		seen[h] = struct{}{}
+		files = append(files, h)
+	}
+
+	for _, arg := range patterns {
+		pattern := arg
+		relative := !filepath.IsAbs(pattern) && !strings.ContainsRune(pattern, filepath.Separator)
+		if relative {
+			pattern = filepath.Join(cwd, pattern)
+		}
+		hits, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", pattern, err)
+		}
+		for _, h := range hits {
+			addFile(h)
+		}
+
+		if len(hits) == 0 && relative && !strings.ContainsAny(arg, "*?[") {
+			for _, h := range FindTicketFiles(cwd, arg) {
+				addFile(h)
+			}
+		}
+	}
+
+	return files, nil
 }
 
 // resolveArchiveDir determines where to archive a file.

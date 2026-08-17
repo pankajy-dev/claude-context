@@ -1880,14 +1880,14 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would move ticket to: %s", archivedDir))
 	} else {
-		if err := common.EnsureDir(archivedDir); err != nil {
-			return fmt.Errorf("failed to create archived directory: %w", err)
-		}
-
 		// Copy concrete files from primary project to archive
 		if ticket.PrimaryContextName != "" {
 			primaryProject := cfg.GetProject(ticket.PrimaryContextName)
 			if primaryProject != nil {
+				if err := common.EnsureDir(archivedDir); err != nil {
+					return fmt.Errorf("failed to create archived directory: %w", err)
+				}
+
 				primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
 
 				// Copy the ticket file and every companion named after the ticket
@@ -1925,7 +1925,11 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 				os.RemoveAll(ticketDir)
 			}
 		} else {
-			// V1 Architecture: Move entire directory
+			// No primary project: move the whole ticket directory. os.Rename needs
+			// the destination to not exist, so only its parent is created here.
+			if err := common.EnsureDir(filepath.Dir(archivedDir)); err != nil {
+				return fmt.Errorf("failed to create archived directory: %w", err)
+			}
 			if err := os.Rename(ticketDir, archivedDir); err != nil {
 				return fmt.Errorf("failed to move ticket to archived: %w", err)
 			}
@@ -1934,7 +1938,7 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update config: move from active to archived
-	ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s", time.Now().Format("2006-01-02"), ticketID)
+	ticket.ArchivedPath = filepath.Join("contexts", "_archived", filepath.Base(archivedDir))
 
 	// Remove from active tickets
 	newActive := []config.Ticket{}
