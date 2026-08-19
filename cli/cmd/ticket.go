@@ -514,14 +514,61 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 
 			if ticketTarget == "" {
-				return fmt.Errorf("could not find ticket files for: %s", ticketID)
-			}
+				// The original files are gone everywhere we look (likely deleted by
+				// mistake). Rather than fail and leave the ticket permanently stuck,
+				// recreate it from the template so this project becomes the new home.
+				warningMsg(fmt.Sprintf("Original files for %s could not be found (likely deleted) — recreating from template", ticketID))
 
-			// Create symlink to ticket file
-			if err := common.CreateSymlink(ticketTarget, concreteTicketFile); err != nil {
-				return fmt.Errorf("failed to create symlink: %w", err)
+				if err := common.EnsureDir(ticketDir); err != nil {
+					return fmt.Errorf("failed to create ticket directory: %w", err)
+				}
+
+				ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
+				if err != nil {
+					return fmt.Errorf("failed to load ticket template: %w", err)
+				}
+				content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
+				fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
+
+				if err := os.WriteFile(concreteTicketFile, []byte(fullContent), 0644); err != nil {
+					return fmt.Errorf("failed to create ticket file: %w", err)
+				}
+				successMsg(fmt.Sprintf("Created ticket file: %s", concreteTicketFile))
+
+				dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
+				if concreteTicketFile != dataDirTicketFile {
+					if err := common.CreateSymlink(concreteTicketFile, dataDirTicketFile); err != nil {
+						warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
+					} else {
+						successMsg("Created symlink in data directory")
+					}
+				}
+
+				if projectName == "" {
+					projectName = filepath.Base(currentDir)
+				}
+				alreadyLinked := false
+				for _, lp := range existingTicket.LinkedProjects {
+					if lp.ContextName == projectName {
+						alreadyLinked = true
+						break
+					}
+				}
+				if !alreadyLinked {
+					existingTicket.LinkedProjects = append(existingTicket.LinkedProjects, config.LinkedProject{
+						ContextName: projectName,
+						ProjectPath: currentDir,
+					})
+				}
+				existingTicket.PrimaryContextName = projectName
+				existingTicket.LastModified = time.Now()
+			} else {
+				// Create symlink to ticket file
+				if err := common.CreateSymlink(ticketTarget, concreteTicketFile); err != nil {
+					return fmt.Errorf("failed to create symlink: %w", err)
+				}
+				successMsg(fmt.Sprintf("Created symlink: %s", concreteTicketFile))
 			}
-			successMsg(fmt.Sprintf("Created symlink: %s", concreteTicketFile))
 		}
 	}
 
@@ -2431,6 +2478,10 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 			}
 		}
 		cfg.Tickets.Archived = newArchived
+	}
+
+	if cfg.IsCurrentlyWorking(ticketID) {
+		cfg.RemoveCurrentWorkingTicket(ticketID)
 	}
 
 	if !dryRun {

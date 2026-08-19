@@ -343,3 +343,42 @@ func Test_TicketRestoreIntegration(t *testing.T) {
 		t.Errorf("Restored ticket still has completed_at set")
 	}
 }
+
+// Test_TicketDeleteRemovesFromWorkingList verifies that deleting a ticket also
+// drops it from current_working_tickets, so it doesn't linger there forever.
+func Test_TicketDeleteRemovesFromWorkingList(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	h.AddProject("project1", h.projectDir)
+
+	ticketID := "INTEGRATION-006"
+	now := time.Now()
+	cfg := h.GetConfig()
+	cfg.Tickets.Active = append(cfg.Tickets.Active, config.Ticket{
+		TicketID:     ticketID,
+		Status:       "active",
+		CreatedAt:    now,
+		LastModified: now,
+	})
+	cfg.AddCurrentWorkingTicket(ticketID, "project1")
+	h.configMgr.Save(cfg)
+
+	if !h.GetConfig().IsCurrentlyWorking(ticketID) {
+		t.Fatalf("Setup failed: ticket not in working list before delete")
+	}
+
+	if err := os.Chdir(h.projectDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	dataDir = h.dataDir
+
+	rootCmd.SetArgs([]string{"ticket", "delete", ticketID, "--force", "--data-dir", h.dataDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Failed to delete ticket: %v", err)
+	}
+
+	if h.GetConfig().IsCurrentlyWorking(ticketID) {
+		t.Errorf("Ticket %s still in current_working_tickets after delete", ticketID)
+	}
+}
