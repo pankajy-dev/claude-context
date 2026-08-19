@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/pankaj/claude-context/internal/clauderc"
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
 	"github.com/pankaj/claude-context/internal/templates"
@@ -28,7 +27,7 @@ var ticketCreateCmd = &cobra.Command{
 	Long: `Create a new ticket workspace for tracking work across multiple projects.
 
 Creates the ticket file in the current directory and a symlink in the data
-directory. .clauderc is not modified.
+directory.
 
 If ticket-id is not provided, it will be auto-detected from the current git branch
 (only if the branch is not main/master). If a ticket with that name already exists,
@@ -92,6 +91,11 @@ func init() {
 	// ticket archive
 	ticketCmd.AddCommand(ticketArchiveCmd)
 	ticketArchiveCmd.InheritedFlags().MarkHidden("ticket")
+
+	// ticket restore
+	ticketCmd.AddCommand(ticketRestoreCmd)
+	ticketRestoreCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
+	ticketRestoreCmd.InheritedFlags().MarkHidden("ticket")
 
 	// ticket edit
 	ticketCmd.AddCommand(ticketEditCmd)
@@ -521,9 +525,6 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Ticket files are not registered in .clauderc — Claude Code picks them up
-	// on its own. addTicketToClauderc is kept in case that changes back.
-
 	// Git commit removed (no longer tracking in git)
 
 	if !dryRun {
@@ -560,26 +561,13 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// addTicketToClauderc adds <ticket-id>.md to a project's .clauderc, creating the
-// file if needed. Intentionally unused: ticket create/link no longer touch
-// .clauderc. Call this again to restore that behaviour.
-func addTicketToClauderc(projectPath, ticketID string, dryRun bool) {
-	rcMgr := clauderc.NewManager(projectPath)
-	ticketFileName := ticketID + ".md"
-	if err := rcMgr.AddFile(ticketFileName, dryRun); err != nil {
-		warningMsg(fmt.Sprintf("Failed to add %s to .clauderc: %v", ticketFileName, err))
-	} else if !dryRun {
-		successMsg(fmt.Sprintf("Added %s to .clauderc", ticketFileName))
-	}
-}
-
 // ticket link subcommand
 var ticketLinkCmd = &cobra.Command{
 	Use:   "link <ticket-id> [project...]",
 	Short: "Link ticket to one or more projects",
 	Long: `Link a ticket to one or more projects.
 
-Creates symlinks in project directories. .clauderc is not modified.
+Creates symlinks in project directories.
 
 With no arguments the ticket ID comes from --ticket/-t, CCTX_TICKET or the
 current git branch, and the project from --project/-p, CCTX_PROJECT or the
@@ -748,7 +736,7 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 					}
 
 				default:
-					// No file to link — don't record a link or add a dangling .clauderc entry
+					// No file to link — don't record a link
 					errorMsg(fmt.Sprintf("No ticket file found for %s (looked in %s and %s)", ticketID, symlinkPath, ticketFile))
 					continue
 				}
@@ -806,7 +794,7 @@ var ticketUnlinkCmd = &cobra.Command{
 	Short: "Unlink ticket from project(s)",
 	Long: `Unlink a ticket from one or more projects.
 
-Removes symlinks and updates .clauderc automatically.
+Removes symlinks automatically.
 
 With no arguments the ticket ID comes from --ticket/-t, CCTX_TICKET or the
 current git branch.
@@ -898,7 +886,6 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would remove: %s", ticketFilePath))
-			dryRunMsg(fmt.Sprintf("Would remove from .clauderc"))
 		} else {
 			// Handle primary vs secondary project
 			isPrimary := ticket.PrimaryContextName == projectName
@@ -947,14 +934,6 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 				if common.FileExists(sessionsFilePath) {
 					common.RemoveSymlink(sessionsFilePath)
 				}
-			}
-
-			// Update .clauderc
-			rcMgr := clauderc.NewManager(project.ProjectPath)
-			if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
-			} else {
-				successMsg("Updated .clauderc")
 			}
 
 			// Remove from ticket's linked projects
@@ -1232,7 +1211,6 @@ This command will:
   - Auto-detect current git branch and commit (if in a git repo)
   - Remove ticket symlinks from all linked projects
   - Archive the ticket to ~/.cctx/contexts/_archived/
-  - Update all .clauderc files
 
 Git info is auto-detected from your current directory:
   - Branch name: stored in ticket notes
@@ -1424,15 +1402,6 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 			} else {
 				successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 			}
-		}
-
-		// Update .clauderc
-		rcMgr := clauderc.NewManager(project.ProjectPath)
-		if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-			warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
-		}
-		if err := rcMgr.RemoveFile("SESSIONS.md", dryRun); err != nil {
-			warningMsg(fmt.Sprintf("Failed to update .clauderc for SESSIONS.md in %s: %v", lp.ContextName, err))
 		}
 	}
 
@@ -1840,7 +1809,6 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 		if dryRun {
 			dryRunMsg(fmt.Sprintf("Would remove symlink from %s", lp.ContextName))
 			dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md from %s", lp.ContextName))
-			dryRunMsg(fmt.Sprintf("Would remove from .clauderc"))
 		} else {
 			if common.FileExists(symlinkPath) {
 				if err := common.RemoveSymlink(symlinkPath); err != nil {
@@ -1857,12 +1825,6 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 				} else {
 					successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 				}
-			}
-
-			// Update .clauderc
-			rcMgr := clauderc.NewManager(project.ProjectPath)
-			if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-				warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
 			}
 		}
 	}
@@ -1891,7 +1853,6 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 				primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
 
 				// Copy the ticket file and every companion named after the ticket
-				rcMgr := clauderc.NewManager(primaryProject.ProjectPath)
 				for _, src := range FindTicketFiles(primaryProject.ProjectPath, ticketID) {
 					name := filepath.Base(src)
 					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
@@ -1900,10 +1861,6 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 					}
 					successMsg(fmt.Sprintf("Copied %s to archive", name))
 					os.Remove(src)
-
-					if name != ticketID+".md" {
-						rcMgr.RemoveFile(name, dryRun)
-					}
 				}
 
 				if common.FileExists(primarySessionsFile) {
@@ -1970,6 +1927,182 @@ func runTicketArchive(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// ticket restore subcommand
+var ticketRestoreCmd = &cobra.Command{
+	Use:   "restore <ticket-id>",
+	Short: "Restore an archived ticket for active development",
+	Long: `Restore an archived (or completed) ticket back to active status.
+
+Copies every file belonging to the ticket — the ticket file, companions like
+PLAN-<ticket-id>.md, and SESSIONS.md — from ~/.cctx/contexts/_archived/ into
+the current directory (the same place 'cctx ticket create' would put them),
+recreates the data directory symlinks, and moves the ticket from archived
+back to active in config.json.
+
+With no argument the ticket ID comes from --ticket/-t, CCTX_TICKET or the
+current git branch.
+
+Example:
+  cctx ticket restore TICKET-123
+  cctx ticket restore TICKET-123 --force  # Skip confirmation`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runTicketRestore,
+}
+
+func runTicketRestore(cmd *cobra.Command, args []string) error {
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		ticketID = GetTicketID()
+		if ticketID == "" {
+			return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
+		}
+	}
+	ticketID = strings.TrimSuffix(ticketID, ".md")
+
+	dataDir := GetDataDirOrExit()
+
+	cfgMgr := config.NewManager(dataDir)
+	cfg, err := cfgMgr.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	ticket := cfg.GetTicket(ticketID, true)
+	if ticket == nil {
+		return fmt.Errorf("ticket not found: %s", ticketID)
+	}
+	if ticket.ArchivedPath == "" {
+		return fmt.Errorf("ticket %s is not archived (status: %s)", ticketID, ticket.Status)
+	}
+
+	archivedDir := filepath.Join(cfgMgr.GetRepoRoot(), ticket.ArchivedPath)
+	if !common.DirExists(archivedDir) {
+		return fmt.Errorf("archived directory not found: %s", archivedDir)
+	}
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// FindTicketFiles deliberately excludes SESSIONS.md since it doesn't
+	// contain the ticket ID, so it's added separately here.
+	filesToRestore := FindTicketFiles(archivedDir, ticketID)
+	sessionsFile := filepath.Join(archivedDir, "SESSIONS.md")
+	if common.FileExists(sessionsFile) {
+		filesToRestore = append(filesToRestore, sessionsFile)
+	}
+
+	if len(filesToRestore) == 0 {
+		return fmt.Errorf("no files found in archive: %s", archivedDir)
+	}
+
+	// Refuse to clobber files already sitting in the current directory.
+	for _, src := range filesToRestore {
+		dest := filepath.Join(currentDir, filepath.Base(src))
+		if common.FileExists(dest) {
+			return fmt.Errorf("refusing to overwrite existing file: %s", dest)
+		}
+	}
+
+	fmt.Println()
+	infoMsg(fmt.Sprintf("Restoring ticket: %s", ticketID))
+	infoMsg(fmt.Sprintf("From: %s", archivedDir))
+	infoMsg(fmt.Sprintf("To: %s", currentDir))
+	fmt.Println()
+	for _, src := range filesToRestore {
+		fmt.Printf("  - %s\n", filepath.Base(src))
+	}
+	fmt.Println()
+
+	if dryRun {
+		dryRunMsg(fmt.Sprintf("Would copy %d file(s) to %s", len(filesToRestore), currentDir))
+		dryRunMsg("Would recreate data directory symlinks")
+		dryRunMsg("Would move ticket from archived to active")
+		return nil
+	}
+
+	if !ticketForce && !common.Confirm("Proceed with restore?", true) {
+		infoMsg("Operation cancelled")
+		return nil
+	}
+	fmt.Println()
+
+	for _, src := range filesToRestore {
+		dest := filepath.Join(currentDir, filepath.Base(src))
+		if err := common.CopyFile(src, dest); err != nil {
+			return fmt.Errorf("failed to restore %s: %w", filepath.Base(src), err)
+		}
+		os.Remove(src)
+		successMsg(fmt.Sprintf("Restored %s", filepath.Base(src)))
+	}
+	os.Remove(archivedDir) // best-effort; no-op if anything unexpected remains
+
+	// Recreate the data directory symlinks for the ticket file and SESSIONS.md
+	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+	if err := common.EnsureDir(ticketDir); err != nil {
+		return fmt.Errorf("failed to create ticket directory: %w", err)
+	}
+
+	concreteTicketFile := filepath.Join(currentDir, ticketID+".md")
+	if err := common.CreateSymlink(concreteTicketFile, filepath.Join(ticketDir, ticketID+".md")); err != nil {
+		warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
+	}
+
+	concreteSessionsFile := filepath.Join(currentDir, "SESSIONS.md")
+	if common.FileExists(concreteSessionsFile) {
+		if err := common.CreateSymlink(concreteSessionsFile, filepath.Join(ticketDir, "SESSIONS.md")); err != nil {
+			warningMsg(fmt.Sprintf("Failed to create data dir sessions symlink: %v", err))
+		}
+	}
+	successMsg("Recreated data directory symlinks")
+
+	// Reopen the ticket against whatever project the current directory resolves to
+	projectName, _ := GetProjectContext(dataDir)
+	var linkedProjects []config.LinkedProject
+	if projectName != "" {
+		if project := cfg.GetProject(projectName); project != nil {
+			linkedProjects = append(linkedProjects, config.LinkedProject{ContextName: projectName, ProjectPath: project.ProjectPath})
+		}
+	}
+	if len(linkedProjects) == 0 {
+		linkedProjects = append(linkedProjects, config.LinkedProject{ContextName: filepath.Base(currentDir), ProjectPath: currentDir})
+	}
+
+	ticket.Status = "active"
+	ticket.ArchivedPath = ""
+	ticket.CompletedAt = nil
+	ticket.AbandonedAt = nil
+	ticket.LinkedProjects = linkedProjects
+	ticket.PrimaryContextName = linkedProjects[0].ContextName
+	ticket.LastModified = time.Now()
+
+	newArchived := []config.Ticket{}
+	for _, t := range cfg.Tickets.Archived {
+		if t.TicketID != ticketID {
+			newArchived = append(newArchived, t)
+		}
+	}
+	cfg.Tickets.Archived = newArchived
+	cfg.Tickets.Active = append(cfg.Tickets.Active, *ticket)
+
+	cfg.AddCurrentWorkingTicket(ticketID, ticket.PrimaryContextName)
+
+	if err := cfgMgr.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	successMsg("Updated configuration")
+
+	fmt.Println()
+	successMsg(fmt.Sprintf("Successfully restored ticket: %s", ticketID))
+	infoMsg(fmt.Sprintf("Ticket file: %s", concreteTicketFile))
+	infoMsg(fmt.Sprintf("Linked to: %s", ticket.PrimaryContextName))
+
+	return nil
+}
+
 // ticket edit subcommand
 var ticketEditCmd = &cobra.Command{
 	Use:   "edit <ticket-id>",
@@ -1993,7 +2126,6 @@ This removes:
 - Ticket from config.json (active or archived)
 - Ticket directory and files
 - Symlinks from all linked projects
-- .clauderc entries in projects
 
 This action cannot be undone.
 
@@ -2013,7 +2145,6 @@ This command will:
   - Mark all active tickets as completed (if not already)
   - Remove all ticket symlinks from all linked projects
   - Move all tickets to ~/.cctx/contexts/_archived/
-  - Update all .clauderc files
   - Update config.json to move tickets from active to archived
 
 This is useful for bulk cleanup or when starting a new sprint/phase.
@@ -2158,7 +2289,6 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 	}
 	warningMsg("  - Ticket directory and all files")
 	warningMsg("  - Symlinks from all linked projects")
-	warningMsg("  - .clauderc entries in projects")
 	fmt.Println()
 	errorMsg("This action CANNOT be undone!")
 	fmt.Println()
@@ -2189,7 +2319,6 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 		if dryRun {
 			if ticketSymlinkExists {
 				dryRunMsg(fmt.Sprintf("Would remove ticket file from %s", project.ContextName))
-				dryRunMsg("Would remove from .clauderc")
 			}
 			if sessionsSymlinkExists {
 				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md file from %s", project.ContextName))
@@ -2207,12 +2336,6 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 					warningMsg(fmt.Sprintf("Failed to remove ticket file from %s: %v", project.ContextName, err))
 				} else {
 					successMsg(fmt.Sprintf("Removed ticket file from %s", project.ContextName))
-				}
-
-				// Update .clauderc
-				rcMgr := clauderc.NewManager(project.ProjectPath)
-				if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-					warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", project.ContextName, err))
 				}
 			}
 
@@ -2252,12 +2375,6 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 					warningMsg(fmt.Sprintf("Failed to remove file from current directory: %v", err))
 				} else {
 					successMsg("Removed file from current directory")
-				}
-
-				// Update .clauderc in current directory
-				rcMgr := clauderc.NewManager(cwd)
-				if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-					warningMsg(fmt.Sprintf("Failed to update .clauderc: %v", err))
 				}
 			}
 		}
@@ -2404,7 +2521,6 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	infoMsg("This will:")
 	infoMsg("  - Remove all ticket symlinks from all projects")
-	infoMsg("  - Update all .clauderc files")
 	infoMsg("  - Move tickets to ~/.cctx/contexts/_archived/")
 	fmt.Println()
 
@@ -2461,12 +2577,6 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 					} else if verbose {
 						successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
 					}
-				}
-
-				// Update .clauderc
-				rcMgr := clauderc.NewManager(project.ProjectPath)
-				if err := rcMgr.RemoveFile(ticketID+".md", dryRun); err != nil {
-					warningMsg(fmt.Sprintf("Failed to update .clauderc in %s: %v", lp.ContextName, err))
 				}
 			}
 		}

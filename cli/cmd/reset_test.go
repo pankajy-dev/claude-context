@@ -55,7 +55,6 @@ func TestResetProject(t *testing.T) {
 		filepath.Join(tempProjectDir, "claude.md"),
 		filepath.Join(tempProjectDir, "TEST-123.md"),
 		filepath.Join(tempProjectDir, "SESSIONS.md"),
-		filepath.Join(tempProjectDir, ".clauderc"),
 	}
 
 	for _, file := range testFiles {
@@ -92,7 +91,6 @@ func TestResetProject(t *testing.T) {
 
 	// Run reset project command
 	resetForce = true // Skip confirmation
-	resetKeepClauderc = false
 	dataDir = tempDataDir
 
 	// Note: We can't easily test the cobra command directly without setting up the full CLI

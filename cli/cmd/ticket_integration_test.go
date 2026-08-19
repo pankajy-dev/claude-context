@@ -221,8 +221,7 @@ func Test_TicketLinkIntegration(t *testing.T) {
 }
 
 // Test_TicketLinkMissingFileIntegration verifies that linking a ticket whose
-// file is missing fails loudly instead of recording a link and writing a
-// .clauderc entry that points at a nonexistent file.
+// file is missing fails loudly instead of recording a link.
 func Test_TicketLinkMissingFileIntegration(t *testing.T) {
 	h := NewTestHelper(t)
 	defer h.Cleanup()
@@ -252,14 +251,95 @@ func Test_TicketLinkMissingFileIntegration(t *testing.T) {
 
 	h.VerifyTicketLinkedToProject(ticketID, "project1", false)
 
-	if _, err := os.Lstat(filepath.Join(projectDir, ".clauderc")); err == nil {
-		t.Error(".clauderc was created for a ticket with no file")
-	}
-
 	after := h.GetConfig()
 	for _, tk := range after.Tickets.Active {
 		if tk.TicketID == ticketID && tk.PrimaryContextName != "" {
 			t.Errorf("primary context was set to %q despite no ticket file", tk.PrimaryContextName)
 		}
+	}
+}
+
+// Test_TicketRestoreIntegration verifies that restoring an archived ticket
+// copies its files back to the current directory, recreates the data dir
+// symlinks, and moves the ticket back to active in config.json.
+func Test_TicketRestoreIntegration(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	h.AddProject("project1", h.projectDir)
+
+	ticketID := "INTEGRATION-005"
+	archivedDirName := "2026-01-01_" + ticketID
+	archivedDir := filepath.Join(h.dataDir, "contexts", "_archived", archivedDirName)
+	if err := os.MkdirAll(archivedDir, 0755); err != nil {
+		t.Fatalf("Failed to create archived dir: %v", err)
+	}
+
+	os.WriteFile(filepath.Join(archivedDir, ticketID+".md"), []byte("# Ticket: "+ticketID), 0644)
+	os.WriteFile(filepath.Join(archivedDir, "SESSIONS.md"), []byte("# Sessions"), 0644)
+	os.WriteFile(filepath.Join(archivedDir, "PLAN-"+ticketID+".md"), []byte("# Plan"), 0644)
+
+	now := time.Now()
+	cfg := h.GetConfig()
+	cfg.Tickets.Archived = append(cfg.Tickets.Archived, config.Ticket{
+		TicketID:           ticketID,
+		Title:              "Restore test",
+		Status:             "completed",
+		CreatedAt:          now,
+		LastModified:       now,
+		CompletedAt:        &now,
+		PrimaryContextName: "project1",
+		ArchivedPath:       filepath.Join("contexts", "_archived", archivedDirName),
+	})
+	h.configMgr.Save(cfg)
+
+	if err := os.Chdir(h.projectDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	dataDir = h.dataDir
+
+	rootCmd.SetArgs([]string{"ticket", "restore", ticketID, "--force", "--data-dir", h.dataDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Failed to restore ticket: %v", err)
+	}
+
+	for _, name := range []string{ticketID + ".md", "SESSIONS.md", "PLAN-" + ticketID + ".md"} {
+		if _, err := os.Stat(filepath.Join(h.projectDir, name)); err != nil {
+			t.Errorf("Expected restored file %s in project dir: %v", name, err)
+		}
+	}
+
+	if _, err := os.Stat(archivedDir); !os.IsNotExist(err) {
+		t.Errorf("Expected archived dir %s to be removed", archivedDir)
+	}
+
+	h.VerifyTicketFile(ticketID)
+	h.VerifySymlink(h.projectDir, ticketID, true)
+
+	cfg = h.GetConfig()
+	h.VerifyTicketInConfig(ticketID, true)
+	for _, tk := range cfg.Tickets.Archived {
+		if tk.TicketID == ticketID {
+			t.Errorf("Ticket %s still present in archived tickets", ticketID)
+		}
+	}
+
+	var restored *config.Ticket
+	for i := range cfg.Tickets.Active {
+		if cfg.Tickets.Active[i].TicketID == ticketID {
+			restored = &cfg.Tickets.Active[i]
+		}
+	}
+	if restored == nil {
+		t.Fatalf("Restored ticket not found in active tickets")
+	}
+	if restored.Status != "active" {
+		t.Errorf("Restored ticket status is %q, expected active", restored.Status)
+	}
+	if restored.ArchivedPath != "" {
+		t.Errorf("Restored ticket still has archived_path: %s", restored.ArchivedPath)
+	}
+	if restored.CompletedAt != nil {
+		t.Errorf("Restored ticket still has completed_at set")
 	}
 }

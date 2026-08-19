@@ -12,9 +12,8 @@ import (
 )
 
 var (
-	resetKeepConfig   bool
-	resetKeepClauderc bool
-	resetForce        bool
+	resetKeepConfig bool
+	resetForce      bool
 )
 
 var resetCmd = &cobra.Command{
@@ -31,8 +30,7 @@ var resetAllCmd = &cobra.Command{
 This command will:
   1. Remove all symlinks from all managed projects
   2. Remove all concrete ticket files from all projects
-  3. Remove .clauderc files from all projects
-  4. Remove entire ~/.cctx directory (unless --keep-config)
+  3. Remove entire ~/.cctx directory (unless --keep-config)
 
 With --keep-config flag:
   - Keeps config.json and templates
@@ -59,7 +57,6 @@ var resetProjectCmd = &cobra.Command{
 This command removes:
   - All symlinks from project directory (claude.md, global contexts, ticket symlinks)
   - All concrete ticket files from project directory (TICKET-*.md, SESSIONS.md)
-  - .clauderc file from project directory (unless --keep-clauderc)
   - Project's context directory from ~/.cctx/contexts/<project-name>/
   - Ticket directories from ~/.cctx/contexts/_tickets/ if project owns concrete files
   - Project entry from config.json (if registered)
@@ -79,7 +76,6 @@ This is useful for:
 Examples:
   cctx admin reset project                    # Clean current project
   cctx admin reset project my-project         # Clean specific project
-  cctx admin reset project --keep-clauderc    # Keep .clauderc file
   cctx admin reset project --dry-run -v       # Preview what will be removed`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runResetProject,
@@ -95,7 +91,6 @@ func init() {
 
 	// reset project
 	resetCmd.AddCommand(resetProjectCmd)
-	resetProjectCmd.Flags().BoolVar(&resetKeepClauderc, "keep-clauderc", false, "Keep .clauderc file")
 	resetProjectCmd.Flags().BoolVarP(&resetForce, "force", "f", false, "Skip confirmation prompt")
 	resetProjectCmd.InheritedFlags().MarkHidden("project")
 }
@@ -221,12 +216,6 @@ func runResetAll(cmd *cobra.Command, args []string) error {
 					filesToRemove = append(filesToRemove, fullPath)
 					projectFilesCount++
 				}
-			}
-
-			// .clauderc - always cctx-managed
-			if fileName == ".clauderc" {
-				filesToRemove = append(filesToRemove, fullPath)
-				projectFilesCount++
 			}
 		}
 	}
@@ -461,11 +450,6 @@ func runResetProject(cmd *cobra.Command, args []string) error {
 					filesToRemove = append(filesToRemove, fullPath)
 				}
 			}
-		}
-
-		// .clauderc file
-		if entry.Name() == ".clauderc" && !resetKeepClauderc {
-			filesToRemove = append(filesToRemove, fullPath)
 		}
 	}
 

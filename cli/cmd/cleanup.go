@@ -80,7 +80,6 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 		// Main context file (claude.md)
 		expectedSymlinks["claude.md"] = true
-		expectedSymlinks[".clauderc"] = true
 
 		// Linked global contexts
 		for _, globalName := range project.LinkedGlobals {

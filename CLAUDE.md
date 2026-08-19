@@ -168,19 +168,6 @@ make build                              # Rebuild binary
 cctx admin global templates reset --all      # Update ~/.cctx/templates/
 ```
 
-### .clauderc Integration
-
-**Purpose**: Auto-manage `.clauderc` files in projects to include all relevant context files.
-
-**Manager**: `clauderc.Manager` in `cli/internal/clauderc/clauderc.go`
-
-**Behavior**:
-- Automatically adds/removes files from `.clauderc.additionalContext[]`
-- Creates `.clauderc` if missing when linking first context
-- Preserves existing entries not managed by cctx
-- Atomic writes (temp file + rename)
-- Case-sensitive file detection (`CLAUDE.md` vs `claude.md`)
-
 ### Command Tree
 
 The visible surface is deliberately small — ticket work is what this tool is

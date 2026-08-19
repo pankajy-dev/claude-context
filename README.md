@@ -172,7 +172,7 @@ cctx admin cleanup  # Delete orphans
 # Reset a single project (removes everything)
 cctx admin reset project my-project
 # Removes:
-# - All files from project directory (symlinks, tickets, .clauderc)
+# - All files from project directory (symlinks, tickets)
 # - Project context from ~/.cctx/contexts/my-project/
 # - Related ticket directories
 # - Project entry from config.json (if registered)
@@ -181,7 +181,7 @@ cctx admin reset project my-project
 # Clean up current directory (even if not registered)
 cd some-project && cctx admin reset project
 # Works even if project isn't in config.json
-# Cleans up any cctx-managed files (tickets, symlinks, .clauderc)
+# Cleans up any cctx-managed files (tickets, symlinks)
 
 # Reset all projects (nuclear option)
 cctx admin reset all
@@ -300,7 +300,6 @@ my-project/
 ├── python.md -> ~/.cctx/contexts/_global/python.md
 ├── TICKET-123.md -> ~/.cctx/contexts/_tickets/TICKET-123/ticket.md
 ├── SESSIONS.md -> ~/.cctx/contexts/_tickets/TICKET-123/SESSIONS.md
-├── .clauderc               # Auto-managed, includes all contexts
 └── ... (your code)
 ```
 
