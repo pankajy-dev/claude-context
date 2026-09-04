@@ -136,6 +136,17 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 	// Try to detect current project for context
 	currentProject, _ := GetProjectContext(dataDir)
 
+	// Working entries for archived/finished tickets can never be completed again,
+	// so drop them before prompting instead of asking about them every time.
+	if !dryRun {
+		if pruned := pruneStaleWorkingTickets(cfg); len(pruned) > 0 {
+			if err := cfgMgr.Save(cfg); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			infoMsg(fmt.Sprintf("Removed stale working ticket(s): %s", strings.Join(pruned, ", ")))
+		}
+	}
+
 	// Check for existing working tickets (cross-repo support)
 	if len(cfg.CurrentWorkingTickets) > 0 {
 		// Determine what ticket we're about to create/work on
@@ -206,13 +217,10 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 				fmt.Sscanf(choice, "%d", &choiceNum)
 
 				markComplete := func(ticketToComplete string) {
-					oldTicket := cfg.GetTicket(ticketToComplete, false)
-					if oldTicket == nil {
-						warningMsg(fmt.Sprintf("Ticket %s not found", ticketToComplete))
-						return
-					}
-					if oldTicket.Status == "completed" {
-						warningMsg(fmt.Sprintf("Ticket %s already completed", ticketToComplete))
+					if workingTicketIsStale(cfg, ticketToComplete) {
+						if err := dropStaleWorkingEntry(cfgMgr, cfg, ticketToComplete); err != nil {
+							warningMsg(err.Error())
+						}
 						return
 					}
 					if err := runTicketComplete(ticketCompleteCmd, []string{ticketToComplete}); err != nil {
@@ -1298,10 +1306,17 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 	// Find ticket
 	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
+		// Already archived or deleted, but possibly still in the working list
+		if cfg.IsCurrentlyWorking(ticketID) {
+			return dropStaleWorkingEntry(cfgMgr, cfg, ticketID)
+		}
 		return fmt.Errorf("ticket not found: %s", ticketID)
 	}
 
 	if ticket.Status == "completed" {
+		if err := dropStaleWorkingEntry(cfgMgr, cfg, ticketID); err != nil {
+			return err
+		}
 		return fmt.Errorf("ticket is already completed")
 	}
 
@@ -2738,6 +2753,48 @@ func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// workingTicketIsStale reports whether a working-list entry points at a ticket
+// that can no longer be worked on: archived, finished, or gone from config.
+func workingTicketIsStale(cfg *config.Config, ticketID string) bool {
+	ticket := cfg.GetTicket(ticketID, false)
+	return ticket == nil || ticket.Status == "completed" || ticket.Status == "abandoned"
+}
+
+// dropStaleWorkingEntry removes a stale working-list entry and saves the config.
+// Without this, completing such a ticket is impossible: every completion path
+// looks the ticket up in active tickets first, so the entry resurfaces forever.
+func dropStaleWorkingEntry(cfgMgr *config.Manager, cfg *config.Config, ticketID string) error {
+	if !cfg.IsCurrentlyWorking(ticketID) {
+		return nil
+	}
+	if dryRun {
+		dryRunMsg(fmt.Sprintf("Would remove stale working ticket: %s", ticketID))
+		return nil
+	}
+
+	cfg.RemoveCurrentWorkingTicket(ticketID)
+	if err := cfgMgr.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	successMsg(fmt.Sprintf("Removed stale working ticket: %s (no longer active)", ticketID))
+	return nil
+}
+
+// pruneStaleWorkingTickets drops every stale entry from the working list and
+// returns the removed ticket IDs. The caller saves the config.
+func pruneStaleWorkingTickets(cfg *config.Config) []string {
+	var stale []string
+	for _, cwt := range cfg.CurrentWorkingTickets {
+		if workingTicketIsStale(cfg, cwt.TicketID) {
+			stale = append(stale, cwt.TicketID)
+		}
+	}
+	for _, ticketID := range stale {
+		cfg.RemoveCurrentWorkingTicket(ticketID)
+	}
+	return stale
 }
 
 // ticket working subcommand

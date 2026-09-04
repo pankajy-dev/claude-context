@@ -382,3 +382,92 @@ func Test_TicketDeleteRemovesFromWorkingList(t *testing.T) {
 		t.Errorf("Ticket %s still in current_working_tickets after delete", ticketID)
 	}
 }
+
+// Test_TicketCompleteRemovesStaleWorkingEntry covers a working-list entry whose
+// ticket is already archived: it used to fail with "ticket not found" forever.
+func Test_TicketCompleteRemovesStaleWorkingEntry(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	ticketID := "INTEGRATION-007"
+	now := time.Now()
+	cfg := h.GetConfig()
+	cfg.Tickets.Archived = append(cfg.Tickets.Archived, config.Ticket{
+		TicketID:     ticketID,
+		Status:       "completed",
+		CreatedAt:    now,
+		LastModified: now,
+		CompletedAt:  &now,
+	})
+	cfg.AddCurrentWorkingTicket(ticketID, "")
+	h.configMgr.Save(cfg)
+
+	if err := os.Chdir(h.tempDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	dataDir = h.dataDir
+
+	if err := runTicketComplete(ticketCompleteCmd, []string{ticketID}); err != nil {
+		t.Fatalf("runTicketComplete failed on stale working entry: %v", err)
+	}
+
+	if h.GetConfig().IsCurrentlyWorking(ticketID) {
+		t.Errorf("Ticket %s still in current_working_tickets after complete", ticketID)
+	}
+}
+
+// Test_TicketCompleteUnknownTicketStillErrors keeps the error for a ticket that
+// exists nowhere, so typos are not silently swallowed.
+func Test_TicketCompleteUnknownTicketStillErrors(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	if err := os.Chdir(h.tempDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	dataDir = h.dataDir
+
+	if err := runTicketComplete(ticketCompleteCmd, []string{"NOPE-999"}); err == nil {
+		t.Error("Expected error for unknown ticket, got nil")
+	}
+}
+
+// Test_TicketCreatePrunesStaleWorkingEntries verifies stale entries are dropped
+// before the prompt, so creating a new ticket no longer asks about them.
+func Test_TicketCreatePrunesStaleWorkingEntries(t *testing.T) {
+	h := NewTestHelper(t)
+	defer h.Cleanup()
+
+	h.AddProject("test-project", h.projectDir)
+
+	staleID := "INTEGRATION-008-STALE"
+	now := time.Now()
+	cfg := h.GetConfig()
+	cfg.Tickets.Archived = append(cfg.Tickets.Archived, config.Ticket{
+		TicketID:     staleID,
+		Status:       "completed",
+		CreatedAt:    now,
+		LastModified: now,
+		CompletedAt:  &now,
+	})
+	cfg.AddCurrentWorkingTicket(staleID, "")
+	h.configMgr.Save(cfg)
+
+	if err := os.Chdir(h.projectDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	dataDir = h.dataDir
+
+	newID := "INTEGRATION-008"
+	if err := runTicketCreate(&cobra.Command{}, []string{newID}); err != nil {
+		t.Fatalf("runTicketCreate failed: %v", err)
+	}
+
+	cfg = h.GetConfig()
+	if cfg.IsCurrentlyWorking(staleID) {
+		t.Errorf("Stale ticket %s still in current_working_tickets after create", staleID)
+	}
+	if !cfg.IsCurrentlyWorking(newID) {
+		t.Errorf("New ticket %s not added to current_working_tickets", newID)
+	}
+}

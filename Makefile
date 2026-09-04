@@ -30,6 +30,7 @@ build:
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
 	@mkdir -p $(INSTALL_DIR)
+	@rm -f $(INSTALL_DIR)/$(BINARY_NAME)
 	@cp $(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)
 	@chmod +x $(INSTALL_DIR)/$(BINARY_NAME)
 	@echo "✓ Installed to $(INSTALL_DIR)/$(BINARY_NAME)"
@@ -47,6 +48,7 @@ install: build
 ## install-global: Install to /usr/local/bin (requires sudo)
 install-global: build
 	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
+	@sudo rm -f /usr/local/bin/$(BINARY_NAME)
 	@sudo cp $(BINARY_NAME) /usr/local/bin/$(BINARY_NAME)
 	@sudo chmod +x /usr/local/bin/$(BINARY_NAME)
 	@echo "✓ Installed to /usr/local/bin/$(BINARY_NAME)"
