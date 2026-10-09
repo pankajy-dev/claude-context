@@ -196,9 +196,10 @@ cctx admin reset project --dry-run -v
 
 ## Documentation
 
-- **[TUTORIAL.md](TUTORIAL.md)**: Detailed usage guide with examples
+- **[TUTORIAL.md](docs/TUTORIAL.md)**: Detailed usage guide with examples
 - **[CLAUDE.md](CLAUDE.md)**: Architecture and development guide
-- **[Atlassian MCP Integration](atlassian_mcp_integration.md)**: Jira ticket integration setup
+- **[Atlassian MCP Integration](docs/atlassian_mcp_integration.md)**: Jira ticket integration setup
+- **[SKILL.md](docs/SKILL.md)**: A claude skill that helps working with this CLI.
 
 ## Installation
 
@@ -265,7 +266,7 @@ source ~/.bashrc
 cctx admin completion fish > ~/.config/fish/completions/cctx.fish
 ```
 
-**Tip:** Type `cctx <TAB>` to see available commands. See [TUTORIAL.md](TUTORIAL.md#shell-completion-usage) for details.
+**Tip:** Type `cctx <TAB>` to see available commands. See [TUTORIAL.md](docs/TUTORIAL.md#shell-completion-usage) for details.
 
 ## Configuration
 
@@ -426,7 +427,7 @@ For any ticket matching pattern `(CBP|BEE)-\d+`:
 - **Session Logging**: Tracks work automatically in SESSIONS.md
 - **Ticket Context Policy**: Ensures Claude reads ticket context before starting
 
-**Note**: The Jira MCP Policy requires the Atlassian MCP server. See [atlassian_mcp_integration.md](./atlassian_mcp_integration.md) for MCP server setup instructions.
+**Note**: The Jira MCP Policy requires the Atlassian MCP server. See [atlassian_mcp_integration.md](docs/atlassian_mcp_integration.md) for MCP server setup instructions.
 
 ## Troubleshooting
 
@@ -500,7 +501,7 @@ make install    # Install to ~/bin
 
 - **Tutorial**: [TUTORIAL.md](TUTORIAL.md) - Complete usage guide
 - **Architecture**: [CLAUDE.md](CLAUDE.md) - Developer documentation
-- **Jira Integration**: [atlassian_mcp_integration.md](./atlassian_mcp_integration.md)
+- **Jira Integration**: [atlassian_mcp_integration.md](docs/atlassian_mcp_integration.md)
 - **Issues**: [GitHub Issues](https://github.com/pankajy-dev/claude-context/issues)
 
 ## License
