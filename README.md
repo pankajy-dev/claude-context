@@ -31,7 +31,7 @@ tomorrow. So you end up:
 
 ```bash
 # Install and initialize
-git clone https://github.com/yourusername/claude-context.git
+git clone https://github.com/pankajy-dev/claude-context.git
 cd claude-context && make install && cctx admin init
 
 # Start work — ticket ID comes from the branch
@@ -206,7 +206,7 @@ cctx admin reset project --dry-run -v
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/claude-context.git
+git clone https://github.com/pankajy-dev/claude-context.git
 cd claude-context
 make install
 
@@ -501,7 +501,7 @@ make install    # Install to ~/bin
 - **Tutorial**: [TUTORIAL.md](TUTORIAL.md) - Complete usage guide
 - **Architecture**: [CLAUDE.md](CLAUDE.md) - Developer documentation
 - **Jira Integration**: [atlassian_mcp_integration.md](./atlassian_mcp_integration.md)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/claude-context/issues)
+- **Issues**: [GitHub Issues](https://github.com/pankajy-dev/claude-context/issues)
 
 ## License
 
