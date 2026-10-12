@@ -93,6 +93,15 @@ func completeAllTickets(cmd *cobra.Command, args []string, toComplete string) ([
 	return allTicketIDs(resolveDataDir()), cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeArchiveArgs offers ticket IDs and falls back to file completion,
+// since cctx archive also takes paths and globs.
+func completeArchiveArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveDefault
+	}
+	return allTicketIDs(resolveDataDir()), cobra.ShellCompDirectiveDefault
+}
+
 // completeProjects is a ValidArgsFunction for commands taking a project name.
 func completeProjects(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return projectNames(resolveDataDir()), cobra.ShellCompDirectiveNoFileComp
@@ -133,8 +142,8 @@ func registerCompletions() {
 	ticketShowCmd.ValidArgsFunction = completeAllTickets
 	ticketCompleteCmd.ValidArgsFunction = completeActiveTickets
 	ticketAbandonCmd.ValidArgsFunction = completeActiveTickets
-	ticketArchiveCmd.ValidArgsFunction = completeActiveTickets
 	ticketEditCmd.ValidArgsFunction = completeAllTickets
+	archiveCmd.ValidArgsFunction = completeArchiveArgs
 	ticketDeleteCmd.ValidArgsFunction = completeAllTickets
 	ticketLinkCmd.ValidArgsFunction = completeTicketThenProjects
 	ticketUnlinkCmd.ValidArgsFunction = completeTicketThenProjects

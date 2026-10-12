@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
@@ -24,13 +25,15 @@ var rootCmd = &cobra.Command{
 	Short: "Claude Context Manager - ticket workspaces for Claude Code",
 	Long: `Claude Context Manager
 
-Manage per-ticket context files for Claude Code. Each ticket gets a concrete
-<TICKET-ID>.md in the project directory, tracked centrally in ~/.cctx.
+Manage spec-driven ticket workspaces for Claude Code. Each ticket gets a
+.cctx/<TICKET-ID>/ directory in the project, tracked centrally in ~/.cctx.
 
   cctx ticket create CBP-123     Start work on a ticket
+  cctx init-specs                Scaffold mission/tech-stack/roadmap in .cctx/
   cctx ticket complete           Wrap it up (auto-detects from branch)
-  cctx ticket archive CBP-123    Archive the ticket and its companion docs
-  cctx archive "*.md"            Archive loose files from the current directory
+  cctx archive CBP-123           Archive the ticket's workspace
+  cctx archive specs/my-feature  Archive any directory, file or glob
+  cctx archive --list            Show what was archived from this repo
 
 Setup, maintenance and the older project-wide claude.md symlink feature live
 under 'cctx admin'.`,
@@ -211,6 +214,22 @@ func GetTicketID() string {
 	}
 
 	return ""
+}
+
+// resolveTicketID is GetTicketID for commands that look the ticket up in config.
+// A branch like feature/CBP-1 that isn't a ticket itself falls back to its last
+// path segment.
+func resolveTicketID(cfg *config.Config) string {
+	id := GetTicketID()
+	if id == "" || ticketFlag != "" || os.Getenv("CCTX_TICKET") != "" {
+		return id
+	}
+	if cfg.GetTicket(id, true) == nil && strings.Contains(id, "/") {
+		if seg := id[strings.LastIndex(id, "/")+1:]; cfg.GetTicket(seg, true) != nil {
+			return seg
+		}
+	}
+	return id
 }
 
 // GetTicketIDOrExit resolves the ticket ID or exits with an error

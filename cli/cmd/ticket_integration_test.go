@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,46 +53,40 @@ func Test_TicketCreateIntegration(t *testing.T) {
 		t.Fatalf("runTicketCreate failed: %v", err)
 	}
 
-	// Verify ticket was created
+	// Verify ticket was created as a .cctx/<ID>/ workspace
 	h.VerifyTicketInConfig(ticketID, true)
-	h.VerifyTicketDirectory(ticketID, true)
-	h.VerifyTicketFile(ticketID)
-
-	// THIS IS THE KEY TEST: Verify auto-detection worked
-	// The ticket should be automatically linked to "test-project"
-	h.VerifyTicketLinkedToProject(ticketID, "test-project", true)
-
-	// Verify symlink was created in the project directory
-	h.VerifySymlink(h.projectDir, ticketID, true)
-
-	// Verify the ticket has the correct data
-	cfg := h.GetConfig()
-	var ticket *config.Ticket
-	for i := range cfg.Tickets.Active {
-		if cfg.Tickets.Active[i].TicketID == ticketID {
-			ticket = &cfg.Tickets.Active[i]
-			break
+	workspace := filepath.Join(h.projectDir, ".cctx", ticketID)
+	for _, name := range []string{"requirements.md", "plan.md", "validation.md", "changelog.md"} {
+		content, err := os.ReadFile(filepath.Join(workspace, name))
+		if err != nil {
+			t.Errorf("missing %s: %v", name, err)
+			continue
+		}
+		if strings.Contains(string(content), "{{TICKET_ID}}") || !strings.Contains(string(content), ticketID) {
+			t.Errorf("%s: ticket ID not substituted", name)
 		}
 	}
+	if _, err := os.Lstat(filepath.Join(h.projectDir, ticketID+".md")); err == nil {
+		t.Error("no <ID>.md should be created")
+	}
+	h.VerifyTicketDirectory(ticketID, false)
 
+	cfg := h.GetConfig()
+	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
 		t.Fatal("Ticket not found in config")
 	}
-
+	if ticket.WorkspacePath != canon(workspace) {
+		t.Errorf("workspace_path = %s, want %s", ticket.WorkspacePath, canon(workspace))
+	}
+	if len(ticket.LinkedProjects) != 0 || ticket.PrimaryContextName != "" {
+		t.Errorf("directory tickets have no linked projects: %+v", ticket)
+	}
 	if ticket.Title != ticketTitle {
 		t.Errorf("Title is %s, expected %s", ticket.Title, ticketTitle)
 	}
-
 	if len(ticket.Tags) != 2 {
 		t.Errorf("Expected 2 tags, got %d", len(ticket.Tags))
-	}
-
-	if len(ticket.LinkedProjects) == 0 {
-		t.Fatal("Expected ticket to be auto-linked to project, but LinkedProjects is empty")
-	}
-
-	if ticket.LinkedProjects[0].ContextName != "test-project" {
-		t.Errorf("Expected auto-link to 'test-project', got %s", ticket.LinkedProjects[0].ContextName)
 	}
 
 	// Reset globals
@@ -108,8 +103,10 @@ func Test_TicketCreateIntegration_NoProject(t *testing.T) {
 	// Add a project, but DON'T change to its directory
 	h.AddProject("test-project", h.projectDir)
 
-	// Stay in temp directory (not a managed project)
-	if err := os.Chdir(h.tempDir); err != nil {
+	// Work from a directory that isn't a managed project
+	unmanaged := filepath.Join(h.tempDir, "unmanaged")
+	os.MkdirAll(unmanaged, 0755)
+	if err := os.Chdir(unmanaged); err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
 	}
 

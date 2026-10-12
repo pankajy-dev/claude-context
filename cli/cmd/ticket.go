@@ -10,7 +10,6 @@ import (
 
 	"github.com/pankaj/claude-context/internal/common"
 	"github.com/pankaj/claude-context/internal/config"
-	"github.com/pankaj/claude-context/internal/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +17,10 @@ var ticketCmd = &cobra.Command{
 	Use:   "ticket",
 	Short: "Manage ticket workspaces",
 	Long:  `Create and manage ticket workspaces for tracking work across multiple projects.`,
+	// Runnable with NoArgs so a removed verb like "ticket archive" is reported
+	// as an unknown command instead of silently printing help.
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 }
 
 // ticket create subcommand
@@ -88,10 +91,6 @@ func init() {
 	ticketAbandonCmd.Flags().StringVar(&ticketReason, "reason", "", "Reason for abandoning")
 	ticketAbandonCmd.InheritedFlags().MarkHidden("ticket")
 
-	// ticket archive
-	ticketCmd.AddCommand(ticketArchiveCmd)
-	ticketArchiveCmd.InheritedFlags().MarkHidden("ticket")
-
 	// ticket restore
 	ticketCmd.AddCommand(ticketRestoreCmd)
 	ticketRestoreCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
@@ -109,11 +108,6 @@ func init() {
 	ticketDeleteCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
 	ticketDeleteCmd.InheritedFlags().MarkHidden("ticket")
 
-	// ticket archive-all
-	ticketCmd.AddCommand(ticketArchiveAllCmd)
-	ticketArchiveAllCmd.Flags().BoolVarP(&ticketForce, "force", "f", false, "Skip confirmation prompt")
-	ticketArchiveAllCmd.InheritedFlags().MarkHidden("ticket")
-
 	// ticket working
 	ticketCmd.AddCommand(ticketWorkingCmd)
 	ticketWorkingCmd.InheritedFlags().MarkHidden("ticket")
@@ -121,7 +115,6 @@ func init() {
 
 func runTicketCreate(cmd *cobra.Command, args []string) error {
 	var ticketID string
-	var linkToExisting bool
 
 	// Get data directory
 	dataDir := GetDataDirOrExit()
@@ -256,60 +249,33 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 	// Determine ticket ID: from args or auto-detect
 	if len(args) > 0 {
-		// Explicit ticket ID provided
 		ticketID = args[0]
-		existingTicket := cfg.GetTicket(ticketID, true)
-
-		if existingTicket != nil {
-			// Check if ticket is already linked to current project
-			isLinkedToCurrent := false
-			if currentProject != "" {
-				for _, lp := range existingTicket.LinkedProjects {
-					if lp.ContextName == currentProject {
-						isLinkedToCurrent = true
-						break
-					}
-				}
-			}
-
-			if isLinkedToCurrent {
-				return fmt.Errorf("ticket %s already exists and is linked to project: %s", ticketID, currentProject)
-			}
-
-			// Ticket exists but not linked to current project
+		if existingTicket := cfg.GetTicket(ticketID, true); existingTicket != nil {
 			fmt.Println()
 			warningMsg(fmt.Sprintf("Ticket '%s' already exists", ticketID))
-			if len(existingTicket.LinkedProjects) > 0 {
-				projectNames := []string{}
-				for _, lp := range existingTicket.LinkedProjects {
-					projectNames = append(projectNames, lp.ContextName)
-				}
-				infoMsg(fmt.Sprintf("Linked to: %s", strings.Join(projectNames, ", ")))
-			}
 			if existingTicket.Title != "" {
 				infoMsg(fmt.Sprintf("Title: %s", existingTicket.Title))
 			}
+			if existingTicket.ArchivedPath != "" {
+				infoMsg(fmt.Sprintf("It is archived; to continue it run: cctx ticket restore %s", ticketID))
+			}
 			fmt.Println()
 
-			// Ask user what to do (unless in dry-run mode)
 			if dryRun {
 				warningMsg("In dry-run mode, would prompt user for action")
 			} else {
-				// Prepare option for project-scoped ticket
 				projectScopedID := ""
-				if currentProject != "" {
+				if currentProject != "" && cfg.GetTicket(currentProject+"-"+ticketID, true) == nil {
 					projectScopedID = fmt.Sprintf("%s-%s", currentProject, ticketID)
 				}
 
-				// Show options
 				fmt.Println("Choose an option:")
-				fmt.Println("  1. Link to existing ticket (share across projects)")
-				if projectScopedID != "" && cfg.GetTicket(projectScopedID, true) == nil {
-					fmt.Printf("  2. Create project-scoped ticket: %s\n", projectScopedID)
+				if projectScopedID != "" {
+					fmt.Printf("  1. Create project-scoped ticket: %s\n", projectScopedID)
 				}
-				fmt.Println("  3. Create with auto-incremented suffix (e.g., main-1)")
-				fmt.Println("  4. Cancel")
-				fmt.Print("\nEnter choice [1-4]: ")
+				fmt.Printf("  2. Create with auto-incremented suffix (e.g., %s-1)\n", ticketID)
+				fmt.Println("  3. Cancel")
+				fmt.Print("\nEnter choice [1-3]: ")
 
 				var choice string
 				fmt.Scanln(&choice)
@@ -317,24 +283,18 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 
 				switch choice {
 				case "1":
-					linkToExisting = true
-					infoMsg(fmt.Sprintf("Linking to existing ticket: %s", ticketID))
-				case "2":
-					if projectScopedID != "" && cfg.GetTicket(projectScopedID, true) == nil {
-						ticketID = projectScopedID
-						infoMsg(fmt.Sprintf("Creating project-scoped ticket: %s", ticketID))
-					} else {
-						return fmt.Errorf("invalid choice or project-scoped ticket already exists")
+					if projectScopedID == "" {
+						return fmt.Errorf("invalid choice: %s", choice)
 					}
-				case "3":
+					ticketID = projectScopedID
+					infoMsg(fmt.Sprintf("Creating project-scoped ticket: %s", ticketID))
+				case "2":
 					originalID := ticketID
-					suffix := 1
-					for cfg.GetTicket(ticketID, true) != nil {
+					for suffix := 1; cfg.GetTicket(ticketID, true) != nil; suffix++ {
 						ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
-						suffix++
 					}
 					infoMsg(fmt.Sprintf("Creating ticket with suffix: %s", ticketID))
-				case "4", "":
+				case "3", "":
 					infoMsg("Operation cancelled")
 					return nil
 				default:
@@ -343,22 +303,18 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 			}
 		}
 	} else {
-		// Auto-detect from branch
+		// Auto-detect from branch; feature/CBP-1 becomes CBP-1
 		branch := common.GetGitBranch()
 		if branch == "" || branch == "main" || branch == "master" {
 			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
 		}
-
-		// Find unique ticket ID by appending suffix if needed
-		ticketID = branch
+		ticketID = branch[strings.LastIndex(branch, "/")+1:]
 		originalID := ticketID
 		suffix := 0
-
 		for cfg.GetTicket(ticketID, true) != nil {
 			suffix++
 			ticketID = fmt.Sprintf("%s-%d", originalID, suffix)
 		}
-
 		if suffix > 0 {
 			infoMsg(fmt.Sprintf("Ticket %s already exists, using: %s", originalID, ticketID))
 		} else {
@@ -366,252 +322,68 @@ func runTicketCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse tags
+	if !validTicketID(ticketID) {
+		return fmt.Errorf("invalid ticket ID %q: use letters, digits, '.', '_' and '-' only", ticketID)
+	}
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+	workspaceRoot, err := ensureWorkspaceDir(currentDir, dataDir)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(workspaceRoot, ticketID)); err == nil {
+		return fmt.Errorf("workspace already exists: %s", filepath.Join(workspaceRoot, ticketID))
+	}
+
 	var tags []string
 	if ticketTags != "" {
 		tags = splitAndTrim(ticketTags, ",")
 	}
 
-	// Try to detect current project for auto-linking
-	var linkedProjects []config.LinkedProject
-	projectName, _ := GetProjectContext(dataDir)
-	if projectName != "" {
-		// Auto-link to current project
-		project := cfg.GetProject(projectName)
-		if project != nil {
-			linkedProjects = append(linkedProjects, config.LinkedProject{
-				ContextName: projectName,
-				ProjectPath: project.ProjectPath,
-			})
-			if !dryRun {
-				infoMsg(fmt.Sprintf("Auto-detected project: %s", projectName))
-			}
-		}
+	if dryRun {
+		dryRunMsg(fmt.Sprintf("Would create ticket workspace: %s", filepath.Join(workspaceRoot, ticketID)))
+		return nil
 	}
 
-	// Create or update ticket metadata
-	if linkToExisting {
-		// Link existing ticket to current project
-		existingTicket := cfg.GetTicket(ticketID, true)
-		if existingTicket != nil && projectName != "" {
-			// Check if project is already linked
-			alreadyLinked := false
-			for _, lp := range existingTicket.LinkedProjects {
-				if lp.ContextName == projectName {
-					alreadyLinked = true
-					break
-				}
-			}
-
-			if !alreadyLinked {
-				// Add current project to linked projects
-				existingTicket.LinkedProjects = append(existingTicket.LinkedProjects, linkedProjects...)
-				existingTicket.LastModified = time.Now()
-
-				if !dryRun {
-					if err := cfgMgr.Save(cfg); err != nil {
-						return fmt.Errorf("failed to save config: %w", err)
-					}
-					successMsg("Linked ticket to project")
-				}
-			}
-		}
-	} else {
-		// Create new ticket metadata with v2 architecture
-		ticket := config.Ticket{
-			TicketID:       ticketID,
-			Title:          ticketTitle,
-			Status:         "active",
-			CreatedAt:      time.Now(),
-			LastModified:   time.Now(),
-			LinkedProjects: linkedProjects,
-			Tags:           tags,
-			Notes:          ticketNotes,
-		}
-
-		// Set primary context (first linked project)
-		if len(linkedProjects) > 0 {
-			ticket.PrimaryContextName = linkedProjects[0].ContextName
-		}
-
-		// Add to config
-		if !dryRun {
-			cfg.Tickets.Active = append(cfg.Tickets.Active, ticket)
-			if err := cfgMgr.Save(cfg); err != nil {
-				return fmt.Errorf("failed to save config: %w", err)
-			}
-			successMsg("Updated configuration")
-		}
-	}
-
-	// V2 Architecture: ALWAYS create concrete files in current directory
-	// Get current directory first
-	currentDir, err := os.Getwd()
+	workspace, err := scaffoldTicketWorkspace(workspaceRoot, ticketID, dataDir)
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	// Concrete files always go in current directory (v2 behavior)
-	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	concreteTicketFile := filepath.Join(currentDir, ticketID+".md")
-
-	// Create concrete files (skip if linking to existing)
-	if !linkToExisting {
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would create ticket directory: %s", ticketDir))
-			dryRunMsg(fmt.Sprintf("Would create concrete ticket file: %s", concreteTicketFile))
-		} else {
-			// Ensure ticket directory in data dir always exists (for symlinks)
-			if err := common.EnsureDir(ticketDir); err != nil {
-				return fmt.Errorf("failed to create ticket directory: %w", err)
-			}
-
-			// Create ticket.md from template (now includes session tracking section)
-			ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
-			if err != nil {
-				return fmt.Errorf("failed to load ticket template: %w", err)
-			}
-
-			// Replace {{TICKET_ID}} placeholder with actual ticket ID
-			content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
-
-			// Prepend ticket header
-			fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
-
-			if err := os.WriteFile(concreteTicketFile, []byte(fullContent), 0644); err != nil {
-				return fmt.Errorf("failed to create ticket file: %w", err)
-			}
-			successMsg(fmt.Sprintf("Created ticket file: %s", concreteTicketFile))
-
-			// Create symlink in data dir pointing to concrete file (if not already in data dir)
-			dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
-
-			if concreteTicketFile != dataDirTicketFile {
-				if err := common.CreateSymlink(concreteTicketFile, dataDirTicketFile); err != nil {
-					warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
-				} else {
-					successMsg("Created symlink in data directory")
-				}
-			}
-		}
-	} else {
-		// Linking to existing ticket - create symlinks to primary project's concrete files
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would create symlink: %s", concreteTicketFile))
-		} else {
-			existingTicket := cfg.GetTicket(ticketID, true)
-			if existingTicket == nil {
-				return fmt.Errorf("existing ticket not found: %s", ticketID)
-			}
-
-			// Determine target based on primary project
-			var ticketTarget string
-			if existingTicket.PrimaryContextName != "" {
-				primaryProject := cfg.GetProject(existingTicket.PrimaryContextName)
-				if primaryProject != nil && common.FileExists(filepath.Join(primaryProject.ProjectPath, ticketID+".md")) {
-					ticketTarget = filepath.Join(primaryProject.ProjectPath, ticketID+".md")
-				}
-			}
-
-			// Fallback to data dir if primary not accessible
-			if ticketTarget == "" {
-				ticketFile := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID, ticketID+".md")
-				if common.FileExists(ticketFile) {
-					ticketTarget = ticketFile
-				}
-			}
-
-			if ticketTarget == "" {
-				// The original files are gone everywhere we look (likely deleted by
-				// mistake). Rather than fail and leave the ticket permanently stuck,
-				// recreate it from the template so this project becomes the new home.
-				warningMsg(fmt.Sprintf("Original files for %s could not be found (likely deleted) — recreating from template", ticketID))
-
-				if err := common.EnsureDir(ticketDir); err != nil {
-					return fmt.Errorf("failed to create ticket directory: %w", err)
-				}
-
-				ticketContent, _, err := templates.GetTemplate("ticket", dataDir)
-				if err != nil {
-					return fmt.Errorf("failed to load ticket template: %w", err)
-				}
-				content := strings.ReplaceAll(string(ticketContent), "{{TICKET_ID}}", ticketID)
-				fullContent := fmt.Sprintf("# Ticket: %s\n\n", ticketID) + content
-
-				if err := os.WriteFile(concreteTicketFile, []byte(fullContent), 0644); err != nil {
-					return fmt.Errorf("failed to create ticket file: %w", err)
-				}
-				successMsg(fmt.Sprintf("Created ticket file: %s", concreteTicketFile))
-
-				dataDirTicketFile := filepath.Join(ticketDir, ticketID+".md")
-				if concreteTicketFile != dataDirTicketFile {
-					if err := common.CreateSymlink(concreteTicketFile, dataDirTicketFile); err != nil {
-						warningMsg(fmt.Sprintf("Failed to create data dir symlink: %v", err))
-					} else {
-						successMsg("Created symlink in data directory")
-					}
-				}
-
-				if projectName == "" {
-					projectName = filepath.Base(currentDir)
-				}
-				alreadyLinked := false
-				for _, lp := range existingTicket.LinkedProjects {
-					if lp.ContextName == projectName {
-						alreadyLinked = true
-						break
-					}
-				}
-				if !alreadyLinked {
-					existingTicket.LinkedProjects = append(existingTicket.LinkedProjects, config.LinkedProject{
-						ContextName: projectName,
-						ProjectPath: currentDir,
-					})
-				}
-				existingTicket.PrimaryContextName = projectName
-				existingTicket.LastModified = time.Now()
-			} else {
-				// Create symlink to ticket file
-				if err := common.CreateSymlink(ticketTarget, concreteTicketFile); err != nil {
-					return fmt.Errorf("failed to create symlink: %w", err)
-				}
-				successMsg(fmt.Sprintf("Created symlink: %s", concreteTicketFile))
-			}
-		}
+	projectName := currentProject
+	if projectName == "" {
+		projectName = filepath.Base(currentDir)
+	}
+	cfg.Tickets.Active = append(cfg.Tickets.Active, config.Ticket{
+		TicketID:      ticketID,
+		Title:         ticketTitle,
+		Status:        "active",
+		CreatedAt:     time.Now(),
+		LastModified:  time.Now(),
+		Tags:          tags,
+		Notes:         ticketNotes,
+		WorkspacePath: canon(workspace),
+	})
+	cfg.AddCurrentWorkingTicket(ticketID, projectName)
+	if err := cfgMgr.Save(cfg); err != nil {
+		os.RemoveAll(workspace)
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Git commit removed (no longer tracking in git)
-
-	if !dryRun {
-		fmt.Println()
-		if linkToExisting {
-			successMsg(fmt.Sprintf("Successfully linked to existing ticket: %s", ticketID))
-		} else {
-			successMsg(fmt.Sprintf("Successfully created ticket: %s", ticketID))
-			if ticketTitle != "" {
-				infoMsg(fmt.Sprintf("Title: %s", ticketTitle))
-			}
-		}
-		infoMsg(fmt.Sprintf("Location: %s", ticketDir))
-		infoMsg(fmt.Sprintf("Ticket file: %s", concreteTicketFile))
-		if projectName != "" {
-			infoMsg(fmt.Sprintf("Linked to project: %s", projectName))
-		}
-		fmt.Println()
-		infoMsg("Next steps:")
-		infoMsg(fmt.Sprintf("  1. Edit ticket context: vim %s.md", ticketID))
-		if projectName == "" {
-			infoMsg(fmt.Sprintf("  2. Link to a project: cctx ticket link %s <project>", ticketID))
-		} else {
-			infoMsg(fmt.Sprintf("  2. (Optional) Link to other projects: cctx -t %s ticket link <project>", ticketID))
-		}
-
-		// Add to current working tickets (cross-repo tracking)
-		cfg.AddCurrentWorkingTicket(ticketID, projectName)
-		if err := cfgMgr.Save(cfg); err != nil {
-			warningMsg(fmt.Sprintf("Failed to add to working tickets: %v", err))
-		}
+	fmt.Println()
+	successMsg(fmt.Sprintf("Successfully created ticket: %s", ticketID))
+	if ticketTitle != "" {
+		infoMsg(fmt.Sprintf("Title: %s", ticketTitle))
 	}
+	infoMsg(fmt.Sprintf("Workspace: %s", workspace))
+	for _, f := range ticketTemplateFiles {
+		fmt.Printf("  - %s\n", f.file)
+	}
+	fmt.Println()
+	infoMsg("Next step: ask Claude to fill in requirements.md (or use your own SDD skill in this directory)")
 
 	return nil
 }
@@ -686,6 +458,10 @@ func runTicketLink(cmd *cobra.Command, args []string) error {
 	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
 		return fmt.Errorf("ticket not found: %s", ticketID)
+	}
+
+	if ticket.WorkspacePath != "" {
+		return fmt.Errorf("directory tickets live in %s and cannot be linked to other projects", ticket.WorkspacePath)
 	}
 
 	if ticket.Status != "active" {
@@ -892,6 +668,9 @@ func runTicketUnlink(cmd *cobra.Command, args []string) error {
 	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
 		return fmt.Errorf("ticket not found: %s", ticketID)
+	}
+	if ticket.WorkspacePath != "" {
+		return fmt.Errorf("directory tickets live in %s and cannot be linked to other projects", ticket.WorkspacePath)
 	}
 
 	// Determine project names from remaining args
@@ -1167,19 +946,18 @@ func runTicketList(cmd *cobra.Command, args []string) error {
 
 // ticket show subcommand
 var ticketShowCmd = &cobra.Command{
-	Use:   "show <ticket-id>",
+	Use:   "show [<ticket-id>]",
 	Short: "Show detailed ticket information",
 	Long: `Show detailed information about a specific ticket.
 
 Example:
-  cctx ticket show TICKET-123`,
-	Args: cobra.ExactArgs(1),
+  cctx ticket show TICKET-123
+  cctx ticket show              # ticket ID from the current branch`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketShow,
 }
 
 func runTicketShow(cmd *cobra.Command, args []string) error {
-	ticketID := args[0]
-
 	// Get data directory
 	dataDir := GetDataDirOrExit()
 
@@ -1188,6 +966,13 @@ func runTicketShow(cmd *cobra.Command, args []string) error {
 	cfg, err := cfgMgr.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else if ticketID = resolveTicketID(cfg); ticketID == "" {
+		return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
 	}
 
 	// Find ticket
@@ -1224,9 +1009,18 @@ func runTicketShow(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("Linked Projects: %d\n", len(ticket.LinkedProjects))
-	for _, lp := range ticket.LinkedProjects {
-		fmt.Printf("  - %s (%s)\n", lp.ContextName, lp.ProjectPath)
+	if ticket.WorkspacePath != "" {
+		fmt.Printf("Workspace: %s\n", canon(ticket.WorkspacePath))
+		if common.DirExists(ticket.WorkspacePath) {
+			listWorkspaceFiles(ticket.WorkspacePath)
+		} else {
+			fmt.Println("  (missing)")
+		}
+	} else {
+		fmt.Printf("Linked Projects: %d\n", len(ticket.LinkedProjects))
+		for _, lp := range ticket.LinkedProjects {
+			fmt.Printf("  - %s (%s)\n", lp.ContextName, lp.ProjectPath)
+		}
 	}
 
 	if len(ticket.Commits) > 0 {
@@ -1258,16 +1052,12 @@ func runTicketShow(cmd *cobra.Command, args []string) error {
 // ticket complete subcommand
 var ticketCompleteCmd = &cobra.Command{
 	Use:   "complete <ticket-id>",
-	Short: "Mark ticket as completed and auto-archive",
-	Long: `Mark a ticket as completed and automatically archive it.
+	Short: "Mark ticket as completed and archive its workspace",
+	Long: `Mark a ticket as completed and archive its .cctx/<ID>/ workspace.
 
-This command will:
-  - Mark ticket as completed
-  - Auto-detect current git branch and commit (if in a git repo)
-  - Remove ticket symlinks from all linked projects
-  - Archive the ticket to ~/.cctx/contexts/_archived/
+This is the same as 'cctx archive <ID>' without the confirmation prompt.
 
-Git info is auto-detected from your current directory:
+Git info is detected from the project directory that holds the workspace:
   - Branch name: stored in ticket notes
   - Latest commit: stored in ticket commits
   - Override with --commits flag if needed
@@ -1281,29 +1071,24 @@ Examples:
 }
 
 func runTicketComplete(cmd *cobra.Command, args []string) error {
-	var ticketID string
-	if len(args) > 0 {
-		ticketID = args[0]
-	} else {
-		branch := common.GetGitBranch()
-		if branch == "" || branch == "main" || branch == "master" {
-			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
-		}
-		ticketID = branch
-		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
-	}
-
-	// Get data directory
 	dataDir := GetDataDirOrExit()
-
-	// Load config
 	cfgMgr := config.NewManager(dataDir)
 	cfg, err := cfgMgr.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Find ticket
+	var ticketID string
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		ticketID = resolveTicketID(cfg)
+		if ticketID == "" {
+			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch")
+		}
+		infoMsg(fmt.Sprintf("Auto-detected ticket ID: %s", ticketID))
+	}
+
 	ticket := cfg.GetTicket(ticketID, false)
 	if ticket == nil {
 		// Already archived or deleted, but possibly still in the working list
@@ -1320,344 +1105,12 @@ func runTicketComplete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ticket is already completed")
 	}
 
-	// Update ticket
-	completedAt := time.Now()
-	ticket.Status = "completed"
-	ticket.CompletedAt = &completedAt
-	ticket.LastModified = time.Now()
-
-	// Auto-detect git info if not provided
-	if ticketCommits == "" {
-		// Try to get commit from current directory
-		commit := common.GetGitCommitShort()
-		if commit != "" {
-			ticket.Commits = []string{commit}
-			infoMsg(fmt.Sprintf("Auto-detected commit: %s", commit))
-		}
-	} else {
-		// Parse provided commits
-		commits := []string{}
-		for _, c := range splitAndTrim(ticketCommits, ",") {
-			commits = append(commits, c)
-		}
-		ticket.Commits = commits
-	}
-
-	// Auto-detect branch name
-	branch := common.GetGitBranch()
-	if branch != "" {
-		infoMsg(fmt.Sprintf("Auto-detected branch: %s", branch))
-		// Store branch in notes if not already present
-		if ticket.Notes == "" {
-			ticket.Notes = fmt.Sprintf("Branch: %s", branch)
-		} else if !strings.Contains(ticket.Notes, branch) {
-			ticket.Notes = fmt.Sprintf("%s\nBranch: %s", ticket.Notes, branch)
-		}
-	}
-
-	// Parse PRs
-	if ticketPRs != "" {
-		prs := []string{}
-		for _, p := range splitAndTrim(ticketPRs, ",") {
-			prs = append(prs, p)
-		}
-		ticket.PullRequests = prs
-	}
-
-	if dryRun {
-		dryRunMsg(fmt.Sprintf("Would mark ticket %s as completed", ticketID))
-		dryRunMsg("Would auto-archive and remove symlinks")
-		return nil
-	}
-
-	fmt.Println()
-	infoMsg(fmt.Sprintf("Marking ticket %s as completed and archiving...", ticketID))
-
-	// Auto-archive: Remove symlinks from all linked projects
-	fmt.Println()
-	infoMsg("Removing symlinks from projects...")
-
-	// Build list of projects to clean up
-	// If linked_projects is null/empty, scan all managed projects for ticket files
-	projectsToClean := []config.LinkedProject{}
-	if len(ticket.LinkedProjects) > 0 {
-		projectsToClean = ticket.LinkedProjects
-	} else {
-		// Scan all managed projects for this ticket's files (including broken symlinks)
-		infoMsg("No linked projects in config, scanning all managed projects...")
-		for _, proj := range cfg.ManagedProjects {
-			ticketFile := filepath.Join(proj.ProjectPath, ticketID+".md")
-			// Use Lstat to detect both files and symlinks (even broken ones)
-			if _, err := os.Lstat(ticketFile); err == nil {
-				projectsToClean = append(projectsToClean, config.LinkedProject{
-					ContextName: proj.ContextName,
-					ProjectPath: proj.ProjectPath,
-				})
-				infoMsg(fmt.Sprintf("Found ticket files in: %s", proj.ContextName))
-			}
-		}
-
-		// Also check current working directory — ticket may exist in an unmanaged project
-		if cwd, err := os.Getwd(); err == nil {
-			cwdTicketFile := filepath.Join(cwd, ticketID+".md")
-			if _, err := os.Lstat(cwdTicketFile); err == nil {
-				// Only add if not already covered by a managed project
-				alreadyCovered := false
-				for _, lp := range projectsToClean {
-					if lp.ProjectPath == cwd {
-						alreadyCovered = true
-						break
-					}
-				}
-				if !alreadyCovered {
-					projectsToClean = append(projectsToClean, config.LinkedProject{
-						ContextName: filepath.Base(cwd),
-						ProjectPath: cwd,
-					})
-					infoMsg(fmt.Sprintf("Found ticket files in current directory: %s", cwd))
-				}
-			}
-		}
-	}
-
-	// Track which project we'll use as archive source (to skip deletion from it until after archiving)
-	var archiveSourceContextName string
-	if ticket.PrimaryContextName != "" {
-		archiveSourceContextName = ticket.PrimaryContextName
-	} else if len(projectsToClean) > 0 {
-		archiveSourceContextName = projectsToClean[0].ContextName
-	}
-
-	for _, lp := range projectsToClean {
-		project := cfg.GetProject(lp.ContextName)
-		if project == nil {
-			// Use the project path from linked project if project not found in config
-			project = &config.Project{
-				ContextName: lp.ContextName,
-				ProjectPath: lp.ProjectPath,
-			}
-		}
-
-		ticketFilePath := filepath.Join(project.ProjectPath, ticketID+".md")
-		sessionsFilePath := filepath.Join(project.ProjectPath, "SESSIONS.md")
-
-		// Skip archive source project - we'll remove files after archiving
-		if lp.ContextName == archiveSourceContextName {
-			infoMsg(fmt.Sprintf("Skipping %s (archive source, will clean after archiving)", lp.ContextName))
-			continue
-		}
-
-		// Remove ticket file (works for both symlinks and concrete files, including broken symlinks)
-		// Use Lstat to detect even broken symlinks
-		if _, err := os.Lstat(ticketFilePath); err == nil {
-			if err := os.Remove(ticketFilePath); err != nil {
-				warningMsg(fmt.Sprintf("Failed to remove file from %s: %v", lp.ContextName, err))
-			} else {
-				successMsg(fmt.Sprintf("Removed file from %s", lp.ContextName))
-			}
-		}
-
-		// Remove SESSIONS.md (works for both symlinks and concrete files, including broken symlinks)
-		if _, err := os.Lstat(sessionsFilePath); err == nil {
-			if err := os.Remove(sessionsFilePath); err != nil {
-				warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
-			} else {
-				successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
-			}
-		}
-	}
-
-	// Append completion info to SESSIONS.md before archiving
-	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	sessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-	if common.FileExists(sessionsFile) {
-		completionEntry := fmt.Sprintf("\n\n---\n\n## Ticket Completed: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
-		completionEntry += fmt.Sprintf("**Status:** Completed\n\n")
-		if branch != "" {
-			completionEntry += fmt.Sprintf("**Branch:** %s\n\n", branch)
-		}
-		if len(ticket.Commits) > 0 {
-			completionEntry += "**Commits:**\n"
-			for _, commit := range ticket.Commits {
-				completionEntry += fmt.Sprintf("- %s\n", commit)
-			}
-			completionEntry += "\n"
-		}
-		if len(ticket.PullRequests) > 0 {
-			completionEntry += "**Pull Requests:**\n"
-			for _, pr := range ticket.PullRequests {
-				completionEntry += fmt.Sprintf("- %s\n", pr)
-			}
-			completionEntry += "\n"
-		}
-
-		// Append to SESSIONS.md
-		f, err := os.OpenFile(sessionsFile, os.O_APPEND|os.O_WRONLY, 0644)
-		if err == nil {
-			defer f.Close()
-			if _, err := f.WriteString(completionEntry); err != nil {
-				warningMsg(fmt.Sprintf("Failed to append to SESSIONS.md: %v", err))
-			} else {
-				successMsg("Updated SESSIONS.md with completion info")
-			}
-		} else {
-			warningMsg(fmt.Sprintf("Failed to open SESSIONS.md: %v", err))
-		}
-	}
-
-	// Move ticket to archived with unique name (handle existing archives)
-	baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
-	archivedDir := baseArchivedDir
-	suffix := 1
-	for common.FileExists(archivedDir) {
-		archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
-		suffix++
-	}
-
-	// Ensure archived directory exists
-	if err := common.EnsureDir(archivedDir); err != nil {
-		return fmt.Errorf("failed to create archived directory: %w", err)
-	}
-
-	// Determine which project has the concrete files to archive
-	var archiveSourceProject *config.Project
-	if ticket.PrimaryContextName != "" {
-		archiveSourceProject = cfg.GetProject(ticket.PrimaryContextName)
-		// Primary project may not be in managed projects (e.g. unmanaged repo); fall back to projectsToClean
-		if archiveSourceProject == nil {
-			for _, lp := range projectsToClean {
-				if lp.ContextName == ticket.PrimaryContextName {
-					archiveSourceProject = &config.Project{
-						ContextName: lp.ContextName,
-						ProjectPath: lp.ProjectPath,
-					}
-					break
-				}
-			}
-		}
-	}
-	if archiveSourceProject == nil && len(projectsToClean) > 0 {
-		// No primary context set, use first project found with ticket files
-		archiveSourceProject = cfg.GetProject(projectsToClean[0].ContextName)
-		if archiveSourceProject == nil {
-			archiveSourceProject = &config.Project{
-				ContextName: projectsToClean[0].ContextName,
-				ProjectPath: projectsToClean[0].ProjectPath,
-			}
-		}
-		infoMsg(fmt.Sprintf("Using %s as archive source", archiveSourceProject.ContextName))
-	}
-
-	// Copy concrete files from source project to archive
-	if archiveSourceProject != nil {
-		primaryTicketFile := filepath.Join(archiveSourceProject.ProjectPath, ticketID+".md")
-		primarySessionsFile := filepath.Join(archiveSourceProject.ProjectPath, "SESSIONS.md")
-
-		// Copy concrete files to archive
-		if common.FileExists(primaryTicketFile) {
-			if err := common.CopyFile(primaryTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
-				warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
-			} else {
-				successMsg("Copied ticket file to archive")
-				// Remove from source project
-				os.Remove(primaryTicketFile)
-			}
-		}
-
-		if common.FileExists(primarySessionsFile) {
-			if err := common.CopyFile(primarySessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
-				warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
-			} else {
-				successMsg("Copied sessions file to archive")
-				// Remove from source project
-				os.Remove(primarySessionsFile)
-			}
-		}
-
-		// Prompt for additional files containing the ticket ID
-		extras := FindExtraTicketFiles(archiveSourceProject.ProjectPath, ticketID)
-		selectedExtras := promptExtraFiles(extras)
-		for _, name := range selectedExtras {
-			src := filepath.Join(archiveSourceProject.ProjectPath, name)
-			if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
-				warningMsg(fmt.Sprintf("Failed to copy %s to archive: %v", name, err))
-			} else {
-				successMsg(fmt.Sprintf("Copied %s to archive", name))
-				os.Remove(src)
-			}
-		}
-	} else {
-		// No source project found, try to archive from data dir if exists
-		dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
-		dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-
-		if common.FileExists(dataTicketFile) {
-			// Follow symlink if it is one, or copy file
-			if err := common.CopyFile(dataTicketFile, filepath.Join(archivedDir, ticketID+".md")); err != nil {
-				warningMsg(fmt.Sprintf("Failed to copy ticket file to archive: %v", err))
-			} else {
-				successMsg("Copied ticket file to archive from data dir")
-			}
-		}
-
-		if common.FileExists(dataSessionsFile) {
-			if err := common.CopyFile(dataSessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
-				warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
-			} else {
-				successMsg("Copied sessions file to archive from data dir")
-			}
-		}
-	}
-
-	// Clean up data dir symlinks/files
-	dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
-	dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-	common.RemoveSymlink(dataTicketFile)
-	common.RemoveSymlink(dataSessionsFile)
-
-	// Remove ticket directory (should be empty now)
-	os.RemoveAll(ticketDir)
-	successMsg("Moved ticket to archived")
-
-	// Update config: move from active to archived
-	// NOTE: We only save config once at the end to ensure atomicity.
-	// If archiving fails, we don't want to persist a partially completed state.
-	ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s", time.Now().Format("2006-01-02"), ticketID)
-
-	// Remove from active tickets
-	newActive := []config.Ticket{}
-	for _, t := range cfg.Tickets.Active {
-		if t.TicketID != ticketID {
-			newActive = append(newActive, t)
-		}
-	}
-	cfg.Tickets.Active = newActive
-
-	// Add to archived tickets
-	cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
-
-	// Remove from working tickets if present
-	if cfg.IsCurrentlyWorking(ticketID) {
-		cfg.RemoveCurrentWorkingTicket(ticketID)
-	}
-
-	// Save config once at the end after all operations complete
-	if err := cfgMgr.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-	successMsg("Updated configuration")
-
-	fmt.Println()
-	successMsg(fmt.Sprintf("Successfully completed and archived: %s", ticketID))
-	infoMsg(fmt.Sprintf("Archived location: %s", archivedDir))
-	if len(ticket.Commits) > 0 {
-		infoMsg(fmt.Sprintf("Commits: %s", strings.Join(ticket.Commits, ", ")))
-	}
-	if branch != "" {
-		infoMsg(fmt.Sprintf("Branch: %s", branch))
-	}
-
-	return nil
+	return archiveTicket(cfgMgr, ticketID, ticketArchiveOpts{
+		approveCompletion: true,
+		completeAbandoned: true,
+		commits:           ticketCommits,
+		prs:               ticketPRs,
+	})
 }
 
 // ticket abandon subcommand
@@ -1732,7 +1185,7 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	successMsg(fmt.Sprintf("Ticket %s marked as abandoned", ticketID))
-	infoMsg("You can archive it with: cctx ticket archive " + ticketID)
+	infoMsg("You can archive it with: cctx archive " + ticketID)
 
 	// Remove from working tickets if present
 	if cfg.IsCurrentlyWorking(ticketID) {
@@ -1745,284 +1198,28 @@ func runTicketAbandon(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// ticket archive subcommand
-var ticketArchiveCmd = &cobra.Command{
-	Use:   "archive <ticket-id>",
-	Short: "Archive completed/abandoned ticket",
-	Long: `Archive a completed or abandoned ticket.
-
-Moves ticket to archived directory, removes symlinks from all projects,
-and generates documentation for completed tickets.
-
-Example:
-  cctx ticket archive
-  cctx ticket archive TICKET-123`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runTicketArchive,
-}
-
-func runTicketArchive(cmd *cobra.Command, args []string) error {
-	var ticketID string
-	if len(args) > 0 {
-		ticketID = args[0]
-	} else {
-		branch := common.GetGitBranch()
-		if branch == "" || branch == "main" || branch == "master" {
-			return fmt.Errorf("cannot auto-detect ticket ID: not on a feature branch (current: %s)", branch)
-		}
-		ticketID = branch
-		infoMsg(fmt.Sprintf("Auto-detected ticket ID from branch: %s", ticketID))
-	}
-
-	// Strip .md suffix if user passed a filename
-	ticketID = strings.TrimSuffix(ticketID, ".md")
-
-	// Get data directory
-	dataDir := GetDataDirOrExit()
-
-	// Load config
-	cfgMgr := config.NewManager(dataDir)
-	cfg, err := cfgMgr.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Find ticket (include archived — ticket complete may have already moved it there)
-	ticket := cfg.GetTicket(ticketID, true)
-	if ticket == nil { // Ticket not in config — check if files exist in cwd and offer to archive them directly
-		cwd, _ := os.Getwd()
-		files := FindTicketFiles(cwd, ticketID)
-		if len(files) == 0 {
-			return fmt.Errorf("ticket not found: %s", ticketID)
-		}
-		warningMsg(fmt.Sprintf("Ticket %s not found in config, but %d file(s) exist in current directory", ticketID, len(files)))
-		infoMsg(fmt.Sprintf("Will archive to: _archived/<date>_%s/", filepath.Base(cwd)))
-		// runArchive lists the matched files and confirms, so don't gate it behind
-		// a second prompt that hides them.
-		archiveArgs := make([]string, 0, len(files))
-		for _, f := range files {
-			archiveArgs = append(archiveArgs, filepath.Base(f))
-		}
-		return runArchive(cmd, archiveArgs)
-	}
-
-	if ticket.ArchivedPath != "" {
-		// Ticket already archived — check if there are still files in cwd to move into it
-		cwd, _ := os.Getwd()
-		leftover := FindTicketFiles(cwd, ticketID)
-		archiveDir := filepath.Join(cfgMgr.GetRepoRoot(), ticket.ArchivedPath)
-		if len(leftover) > 0 && common.DirExists(archiveDir) {
-			infoMsg(fmt.Sprintf("Ticket %s is already archived at: %s", ticketID, archiveDir))
-			infoMsg(fmt.Sprintf("Found %d file(s) in current directory — archiving into existing ticket archive", len(leftover)))
-			for _, f := range leftover {
-				fmt.Printf("  - %s\n", filepath.Base(f))
-			}
-			if !dryRun && !common.Confirm("Proceed?", true) {
-				infoMsg("Operation cancelled")
-				return nil
-			}
-			for _, f := range leftover {
-				name := filepath.Base(f)
-				if dryRun {
-					dryRunMsg(fmt.Sprintf("Would move %s → %s", name, archiveDir))
-					continue
-				}
-				if err := common.CopyFile(f, filepath.Join(archiveDir, name)); err != nil {
-					warningMsg(fmt.Sprintf("Failed to archive %s: %v", name, err))
-					continue
-				}
-				os.Remove(f)
-				successMsg(fmt.Sprintf("Archived %s → %s", name, archiveDir))
-			}
-			return nil
-		}
-		successMsg(fmt.Sprintf("Ticket %s is already archived", ticketID))
-		infoMsg(fmt.Sprintf("Location: %s", archiveDir))
-		return nil
-	}
-
-	if ticket.Status == "active" {
-		return fmt.Errorf("cannot archive active ticket (mark as completed or abandoned first)")
-	}
-
-	fmt.Println()
-	infoMsg(fmt.Sprintf("Archiving ticket: %s", ticketID))
-	fmt.Println()
-
-	// Confirmation
-	if !dryRun {
-		if !common.Confirm("Proceed with archive?", false) {
-			infoMsg("Operation cancelled")
-			return nil
-		}
-		fmt.Println()
-	}
-
-	// Remove symlinks from all linked projects
-	for _, lp := range ticket.LinkedProjects {
-		project := cfg.GetProject(lp.ContextName)
-		if project == nil {
-			continue
-		}
-
-		symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
-		sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
-
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would remove symlink from %s", lp.ContextName))
-			dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md from %s", lp.ContextName))
-		} else {
-			if common.FileExists(symlinkPath) {
-				if err := common.RemoveSymlink(symlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
-				} else {
-					successMsg(fmt.Sprintf("Removed symlink from %s", lp.ContextName))
-				}
-			}
-
-			// Remove SESSIONS.md symlink if it exists
-			if common.FileExists(sessionsSymlinkPath) {
-				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
-					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
-				} else {
-					successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
-				}
-			}
-		}
-	}
-
-	// Move ticket to archived with unique name (handle existing archives)
-	ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-	baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived", fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
-	archivedDir := baseArchivedDir
-	suffix := 1
-	for common.FileExists(archivedDir) {
-		archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
-		suffix++
-	}
-
-	if dryRun {
-		dryRunMsg(fmt.Sprintf("Would move ticket to: %s", archivedDir))
-	} else {
-		// Copy concrete files from primary project to archive
-		if ticket.PrimaryContextName != "" {
-			primaryProject := cfg.GetProject(ticket.PrimaryContextName)
-			if primaryProject != nil {
-				if err := common.EnsureDir(archivedDir); err != nil {
-					return fmt.Errorf("failed to create archived directory: %w", err)
-				}
-
-				primarySessionsFile := filepath.Join(primaryProject.ProjectPath, "SESSIONS.md")
-
-				// Copy the ticket file and every companion named after the ticket
-				for _, src := range FindTicketFiles(primaryProject.ProjectPath, ticketID) {
-					name := filepath.Base(src)
-					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
-						warningMsg(fmt.Sprintf("Failed to copy %s to archive: %v", name, err))
-						continue
-					}
-					successMsg(fmt.Sprintf("Copied %s to archive", name))
-					os.Remove(src)
-				}
-
-				if common.FileExists(primarySessionsFile) {
-					if err := common.CopyFile(primarySessionsFile, filepath.Join(archivedDir, "SESSIONS.md")); err != nil {
-						warningMsg(fmt.Sprintf("Failed to copy sessions file to archive: %v", err))
-					} else {
-						// Remove from primary project
-						os.Remove(primarySessionsFile)
-					}
-				}
-
-				// Remove symlinks from data dir
-				dataTicketFile := filepath.Join(ticketDir, ticketID+".md")
-				dataSessionsFile := filepath.Join(ticketDir, "SESSIONS.md")
-				common.RemoveSymlink(dataTicketFile)
-				common.RemoveSymlink(dataSessionsFile)
-
-				// Remove ticket directory (should be empty now)
-				os.RemoveAll(ticketDir)
-			}
-		} else {
-			// No primary project: move the whole ticket directory. os.Rename needs
-			// the destination to not exist, so only its parent is created here.
-			if err := common.EnsureDir(filepath.Dir(archivedDir)); err != nil {
-				return fmt.Errorf("failed to create archived directory: %w", err)
-			}
-			if err := os.Rename(ticketDir, archivedDir); err != nil {
-				return fmt.Errorf("failed to move ticket to archived: %w", err)
-			}
-		}
-		successMsg("Moved ticket to archived")
-	}
-
-	// Update config: move from active to archived
-	ticket.ArchivedPath = filepath.Join("contexts", "_archived", filepath.Base(archivedDir))
-
-	// Remove from active tickets
-	newActive := []config.Ticket{}
-	for _, t := range cfg.Tickets.Active {
-		if t.TicketID != ticketID {
-			newActive = append(newActive, t)
-		}
-	}
-	cfg.Tickets.Active = newActive
-
-	// Add to archived tickets
-	cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
-
-	if !dryRun {
-		if err := cfgMgr.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
-		successMsg("Updated configuration")
-	}
-
-	// Git commit removed (no longer tracking in git)
-
-	if !dryRun {
-		fmt.Println()
-		successMsg(fmt.Sprintf("Successfully archived ticket: %s", ticketID))
-		infoMsg(fmt.Sprintf("Location: %s", archivedDir))
-	}
-
-	return nil
-}
-
 // ticket restore subcommand
 var ticketRestoreCmd = &cobra.Command{
 	Use:   "restore <ticket-id>",
 	Short: "Restore an archived ticket for active development",
-	Long: `Restore an archived (or completed) ticket back to active status.
+	Long: `Restore an archived ticket back to active status.
 
-Copies every file belonging to the ticket — the ticket file, companions like
-PLAN-<ticket-id>.md, and SESSIONS.md — from ~/.cctx/contexts/_archived/ into
-the current directory (the same place 'cctx ticket create' would put them),
-recreates the data directory symlinks, and moves the ticket from archived
-back to active in config.json.
+A ticket created with directory workspaces is copied back into
+./.cctx/<ticket-id>/ in the current directory (wherever it was archived from),
+verified, and its archive removed. An existing workspace is never overwritten.
 
-With no argument the ticket ID comes from --ticket/-t, CCTX_TICKET or the
-current git branch.
+Older single-file tickets are restored as before: their files are copied into
+the current directory and the data directory symlinks are recreated.
 
-Example:
-  cctx ticket restore TICKET-123
-  cctx ticket restore TICKET-123 --force  # Skip confirmation`,
+Examples:
+  cctx ticket restore CBP-123
+  cctx ticket restore            # ticket ID from the current branch`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runTicketRestore,
 }
 
 func runTicketRestore(cmd *cobra.Command, args []string) error {
 	var ticketID string
-	if len(args) > 0 {
-		ticketID = args[0]
-	} else {
-		ticketID = GetTicketID()
-		if ticketID == "" {
-			return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
-		}
-	}
-	ticketID = strings.TrimSuffix(ticketID, ".md")
-
 	dataDir := GetDataDirOrExit()
 
 	cfgMgr := config.NewManager(dataDir)
@@ -2031,15 +1228,34 @@ func runTicketRestore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	if len(args) > 0 {
+		ticketID = args[0]
+	} else {
+		ticketID = resolveTicketID(cfg)
+		if ticketID == "" {
+			return fmt.Errorf("no ticket specified. Pass a ticket ID, use --ticket/-t, set CCTX_TICKET, or checkout a feature branch")
+		}
+	}
+	ticketID = strings.TrimSuffix(ticketID, ".md")
+
 	ticket := cfg.GetTicket(ticketID, true)
 	if ticket == nil {
 		return fmt.Errorf("ticket not found: %s", ticketID)
 	}
-	if ticket.ArchivedPath == "" {
+	if ticket.ArchivedPath == "" || cfg.GetTicket(ticketID, false) != nil {
 		return fmt.Errorf("ticket %s is not archived (status: %s)", ticketID, ticket.Status)
 	}
+	if ticket.WorkspacePath != "" {
+		return restoreDirectoryTicket(cfgMgr, ticket)
+	}
+	if !validTicketID(ticketID) {
+		return fmt.Errorf("invalid ticket ID %q", ticketID)
+	}
 
-	archivedDir := filepath.Join(cfgMgr.GetRepoRoot(), ticket.ArchivedPath)
+	archivedDir, ok := safeArchiveDir(cfgMgr, ticket.ArchivedPath)
+	if !ok {
+		return fmt.Errorf("refusing suspicious archived_path %q", ticket.ArchivedPath)
+	}
 	if !common.DirExists(archivedDir) {
 		return fmt.Errorf("archived directory not found: %s", archivedDir)
 	}
@@ -2133,6 +1349,20 @@ func runTicketRestore(cmd *cobra.Command, args []string) error {
 		linkedProjects = append(linkedProjects, config.LinkedProject{ContextName: filepath.Base(currentDir), ProjectPath: currentDir})
 	}
 
+	// Drop the archive's record once it's emptied; otherwise keep it, unowned
+	var records []config.ArchiveRecord
+	for _, r := range cfg.Archives {
+		if filepath.Clean(r.ArchiveDir) == filepath.Clean(ticket.ArchivedPath) {
+			if !common.DirExists(archivedDir) {
+				continue
+			}
+			r.FileCount = countArchiveEntries(archivedDir)
+			r.TicketID = ""
+		}
+		records = append(records, r)
+	}
+	cfg.Archives = records
+
 	ticket.Status = "active"
 	ticket.ArchivedPath = ""
 	ticket.CompletedAt = nil
@@ -2196,27 +1426,6 @@ Example:
   cctx ticket delete TICKET-123 --force  # Skip confirmation`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTicketDelete,
-}
-
-var ticketArchiveAllCmd = &cobra.Command{
-	Use:   "archive-all",
-	Short: "Archive all active tickets",
-	Long: `Archive all active tickets across all projects, or from a specific project.
-
-This command will:
-  - Mark all active tickets as completed (if not already)
-  - Remove all ticket symlinks from all linked projects
-  - Move all tickets to ~/.cctx/contexts/_archived/
-  - Update config.json to move tickets from active to archived
-
-This is useful for bulk cleanup or when starting a new sprint/phase.
-
-Specify a project to archive only tickets linked to that project:
-  - Flag: cctx -p api-gateway ticket archive-all
-  - Env var: export CCTX_PROJECT=api-gateway && cctx ticket archive-all
-  - Current directory: cd /path/to/project && cctx ticket archive-all`,
-	Args: cobra.NoArgs,
-	RunE: runTicketArchiveAll,
 }
 
 func runTicketEdit(cmd *cobra.Command, args []string) error {
@@ -2301,17 +1510,33 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 
 	// Find ticket in active or archived
 	ticket := cfg.GetTicket(ticketID, true)
+	if ticket != nil && ticket.WorkspacePath != "" {
+		return deleteDirectoryTicket(cfgMgr, cfg, ticket)
+	}
 
 	// Determine ticket directory
 	var ticketDir string
+	archiveRemoved := false
 	if ticket != nil {
 		if ticket.ArchivedPath != "" {
-			ticketDir = filepath.Join(dataDir, ticket.ArchivedPath)
+			if archived, ok := safeArchiveDir(cfgMgr, ticket.ArchivedPath); ok {
+				ticketDir = archived
+			} else {
+				warningMsg(fmt.Sprintf("Not removing suspicious archived_path %q", ticket.ArchivedPath))
+			}
 		} else {
 			ticketDir = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
 		}
 	} else {
 		ticketDir = filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
+	}
+	// An ID like ../_archived must never resolve outside _tickets/
+	if ticketDir != "" && (ticket == nil || ticket.ArchivedPath == "") {
+		ticketsRoot := canon(filepath.Join(cfgMgr.GetContextsPath(), "_tickets"))
+		if filepath.Dir(canon(ticketDir)) != ticketsRoot {
+			warningMsg(fmt.Sprintf("Not removing %s: it is outside %s", ticketDir, ticketsRoot))
+			ticketDir = ""
+		}
 	}
 
 	// Check if there are any orphaned files to clean up
@@ -2372,7 +1597,8 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 
 		// Check if ticket symlink exists
 		ticketSymlinkExists := common.FileExists(symlinkPath)
-		sessionsSymlinkExists := common.FileExists(sessionsSymlinkPath)
+		_, lerr := os.Lstat(sessionsSymlinkPath)
+		sessionsSymlinkExists := lerr == nil
 
 		if !ticketSymlinkExists && !sessionsSymlinkExists {
 			continue
@@ -2401,15 +1627,12 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			// Remove SESSIONS.md file (symlink or concrete)
-			if sessionsSymlinkExists {
-				var err error
-				if common.IsSymlink(sessionsSymlinkPath) {
-					err = common.RemoveSymlink(sessionsSymlinkPath)
-				} else {
-					err = os.Remove(sessionsSymlinkPath)
-				}
-				if err != nil {
+			// A concrete SESSIONS.md may belong to another ticket, so only the
+			// symlink into this ticket's data dir is removed
+			if sessionsSymlinkExists && !isTicketSessionsLink(sessionsSymlinkPath, ticketID) {
+				warningMsg(fmt.Sprintf("Left SESSIONS.md in %s (not linked to %s)", project.ContextName, ticketID))
+			} else if sessionsSymlinkExists {
+				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
 					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md file from %s: %v", project.ContextName, err))
 				} else {
 					successMsg(fmt.Sprintf("Removed SESSIONS.md file from %s", project.ContextName))
@@ -2442,17 +1665,14 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 		}
 
 		// Also check for SESSIONS.md file
-		if common.FileExists(sessionsSymlinkPath) {
+		_, sessionsErr := os.Lstat(sessionsSymlinkPath)
+		if sessionsErr == nil && !isTicketSessionsLink(sessionsSymlinkPath, ticketID) {
+			warningMsg(fmt.Sprintf("Left SESSIONS.md in current directory (not linked to %s)", ticketID))
+		} else if sessionsErr == nil {
 			if dryRun {
 				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md file from current directory"))
 			} else {
-				var err error
-				if common.IsSymlink(sessionsSymlinkPath) {
-					err = common.RemoveSymlink(sessionsSymlinkPath)
-				} else {
-					err = os.Remove(sessionsSymlinkPath)
-				}
-				if err != nil {
+				if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
 					warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md file: %v", err))
 				} else {
 					successMsg("Removed SESSIONS.md file from current directory")
@@ -2465,10 +1685,11 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		dryRunMsg(fmt.Sprintf("Would delete directory: %s", ticketDir))
 	} else {
-		if common.DirExists(ticketDir) {
+		if ticketDir != "" && common.DirExists(ticketDir) {
 			if err := os.RemoveAll(ticketDir); err != nil {
 				return fmt.Errorf("failed to delete ticket directory: %w", err)
 			}
+			archiveRemoved = ticket != nil && ticket.ArchivedPath != ""
 			successMsg("Deleted ticket directory")
 		}
 	}
@@ -2499,6 +1720,21 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 		cfg.RemoveCurrentWorkingTicket(ticketID)
 	}
 
+	// The ticket's own archive goes; archives made by glob/path that merely
+	// carry its ID stay listed
+	var records []config.ArchiveRecord
+	for _, r := range cfg.Archives {
+		if ticket != nil && ticket.ArchivedPath != "" && filepath.Clean(r.ArchiveDir) == filepath.Clean(ticket.ArchivedPath) &&
+			(archiveRemoved || !common.DirExists(filepath.Join(dataDir, r.ArchiveDir))) {
+			continue
+		}
+		if r.TicketID == ticketID {
+			r.TicketID = ""
+		}
+		records = append(records, r)
+	}
+	cfg.Archives = records
+
 	if !dryRun {
 		if err := cfgMgr.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)
@@ -2516,243 +1752,13 @@ func runTicketDelete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTicketArchiveAll(cmd *cobra.Command, args []string) error {
-	// Get data directory
-	dataDir := GetDataDirOrExit()
-
-	// Load config
-	cfgMgr := config.NewManager(dataDir)
-	cfg, err := cfgMgr.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+// isTicketSessionsLink reports whether path is a symlink into ticketID's data dir.
+func isTicketSessionsLink(path, ticketID string) bool {
+	if !common.IsSymlink(path) {
+		return false
 	}
-
-	// Check if we should filter by project
-	var projectFilter string
-	if projectFlag != "" || os.Getenv("CCTX_PROJECT") != "" {
-		projectFilter, err = GetProjectContext(dataDir)
-		if err != nil {
-			return err
-		}
-
-		// Verify project exists
-		if cfg.GetProject(projectFilter) == nil {
-			return fmt.Errorf("project not found: %s", projectFilter)
-		}
-	}
-
-	// Filter tickets by project if specified
-	ticketsToArchive := []config.Ticket{}
-	if projectFilter != "" {
-		// Only archive tickets linked to this project
-		for _, ticket := range cfg.Tickets.Active {
-			for _, lp := range ticket.LinkedProjects {
-				if lp.ContextName == projectFilter {
-					ticketsToArchive = append(ticketsToArchive, ticket)
-					break
-				}
-			}
-		}
-	} else {
-		// Archive all active tickets
-		ticketsToArchive = cfg.Tickets.Active
-	}
-
-	// Check if there are any tickets to archive
-	if len(ticketsToArchive) == 0 {
-		if projectFilter != "" {
-			infoMsg(fmt.Sprintf("No active tickets to archive for project: %s", projectFilter))
-		} else {
-			infoMsg("No active tickets to archive")
-		}
-		return nil
-	}
-
-	// Show what will be archived
-	fmt.Println()
-	if projectFilter != "" {
-		infoMsg(fmt.Sprintf("Project: %s", projectFilter))
-		infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(ticketsToArchive)))
-	} else {
-		infoMsg(fmt.Sprintf("Found %d active ticket(s) to archive:", len(ticketsToArchive)))
-	}
-	fmt.Println()
-	for _, ticket := range ticketsToArchive {
-		fmt.Printf("  • %s", ticket.TicketID)
-		if ticket.Title != "" {
-			fmt.Printf(" - %s", ticket.Title)
-		}
-		fmt.Printf(" (%d project(s))\n", len(ticket.LinkedProjects))
-	}
-	fmt.Println()
-	infoMsg("This will:")
-	infoMsg("  - Remove all ticket symlinks from all projects")
-	infoMsg("  - Move tickets to ~/.cctx/contexts/_archived/")
-	fmt.Println()
-
-	// Confirmation required (unless --force or --dry-run)
-	if !ticketForce && !dryRun {
-		confirmMsg := "Archive all active tickets?"
-		if projectFilter != "" {
-			confirmMsg = fmt.Sprintf("Archive all active tickets for project '%s'?", projectFilter)
-		}
-		if !common.Confirm(confirmMsg, false) {
-			infoMsg("Operation cancelled")
-			return nil
-		}
-		fmt.Println()
-	}
-
-	archivedCount := 0
-	for _, ticket := range ticketsToArchive {
-		ticketID := ticket.TicketID
-
-		if verbose {
-			infoMsg(fmt.Sprintf("Archiving ticket: %s", ticketID))
-		}
-
-		// Remove symlinks from all linked projects
-		for _, lp := range ticket.LinkedProjects {
-			project := cfg.GetProject(lp.ContextName)
-			if project == nil {
-				if verbose {
-					warningMsg(fmt.Sprintf("Project not found: %s", lp.ContextName))
-				}
-				continue
-			}
-
-			symlinkPath := filepath.Join(project.ProjectPath, ticketID+".md")
-			sessionsSymlinkPath := filepath.Join(project.ProjectPath, "SESSIONS.md")
-
-			if dryRun {
-				dryRunMsg(fmt.Sprintf("Would remove symlink from %s: %s", lp.ContextName, ticketID))
-				dryRunMsg(fmt.Sprintf("Would remove SESSIONS.md from %s", lp.ContextName))
-			} else {
-				if common.FileExists(symlinkPath) {
-					if err := common.RemoveSymlink(symlinkPath); err != nil {
-						warningMsg(fmt.Sprintf("Failed to remove symlink from %s: %v", lp.ContextName, err))
-					} else if verbose {
-						successMsg(fmt.Sprintf("Removed %s symlink from %s", ticketID, lp.ContextName))
-					}
-				}
-
-				// Remove SESSIONS.md symlink if it exists
-				if common.FileExists(sessionsSymlinkPath) {
-					if err := common.RemoveSymlink(sessionsSymlinkPath); err != nil {
-						warningMsg(fmt.Sprintf("Failed to remove SESSIONS.md from %s: %v", lp.ContextName, err))
-					} else if verbose {
-						successMsg(fmt.Sprintf("Removed SESSIONS.md from %s", lp.ContextName))
-					}
-				}
-			}
-		}
-
-		// Move ticket directory to archived with unique name (handle existing archives)
-		ticketDir := filepath.Join(cfgMgr.GetContextsPath(), "_tickets", ticketID)
-		baseArchivedDir := filepath.Join(cfgMgr.GetContextsPath(), "_archived",
-			fmt.Sprintf("%s_%s", time.Now().Format("2006-01-02"), ticketID))
-		archivedDir := baseArchivedDir
-		suffix := 1
-		for common.FileExists(archivedDir) {
-			archivedDir = fmt.Sprintf("%s-%d", baseArchivedDir, suffix)
-			suffix++
-		}
-
-		if dryRun {
-			dryRunMsg(fmt.Sprintf("Would move %s to archived", ticketID))
-			// Report any extra files that would be included
-			for _, lp := range ticket.LinkedProjects {
-				project := cfg.GetProject(lp.ContextName)
-				if project == nil {
-					continue
-				}
-				for _, name := range FindExtraTicketFiles(project.ProjectPath, ticketID) {
-					dryRunMsg(fmt.Sprintf("Would archive extra file from %s: %s", lp.ContextName, name))
-				}
-			}
-		} else {
-			if common.DirExists(ticketDir) {
-				// Ensure archived directory exists
-				if err := common.EnsureDir(filepath.Join(cfgMgr.GetContextsPath(), "_archived")); err != nil {
-					return fmt.Errorf("failed to create archived directory: %w", err)
-				}
-
-				if err := os.Rename(ticketDir, archivedDir); err != nil {
-					warningMsg(fmt.Sprintf("Failed to move %s to archived: %v", ticketID, err))
-					continue
-				}
-			} else {
-				// ticketDir doesn't exist; still create archivedDir so extra files have somewhere to land
-				if err := common.EnsureDir(archivedDir); err != nil {
-					warningMsg(fmt.Sprintf("Failed to create archive dir for %s: %v", ticketID, err))
-				}
-			}
-
-			// Auto-include any extra files containing the ticket ID from linked projects
-			for _, lp := range ticket.LinkedProjects {
-				project := cfg.GetProject(lp.ContextName)
-				if project == nil {
-					continue
-				}
-				for _, name := range FindExtraTicketFiles(project.ProjectPath, ticketID) {
-					src := filepath.Join(project.ProjectPath, name)
-					if err := common.CopyFile(src, filepath.Join(archivedDir, name)); err != nil {
-						warningMsg(fmt.Sprintf("Failed to archive %s from %s: %v", name, lp.ContextName, err))
-					} else {
-						os.Remove(src)
-						if verbose {
-							successMsg(fmt.Sprintf("Archived extra file: %s", name))
-						}
-					}
-				}
-			}
-		}
-
-		archivedCount++
-		if !verbose {
-			successMsg(fmt.Sprintf("Archived: %s", ticketID))
-		}
-	}
-
-	if !dryRun {
-		// Create a map of archived ticket IDs for quick lookup
-		archivedTicketIDs := make(map[string]bool)
-		for _, ticket := range ticketsToArchive {
-			archivedTicketIDs[ticket.TicketID] = true
-		}
-
-		// Move archived tickets from active to archived in config
-		newActive := []config.Ticket{}
-		for i := range cfg.Tickets.Active {
-			ticket := &cfg.Tickets.Active[i]
-			if archivedTicketIDs[ticket.TicketID] {
-				// This ticket should be archived
-				if ticket.Status != "completed" && ticket.Status != "abandoned" {
-					ticket.Status = "completed"
-				}
-				ticket.ArchivedPath = fmt.Sprintf("contexts/_archived/%s_%s",
-					time.Now().Format("2006-01-02"), ticket.TicketID)
-				cfg.Tickets.Archived = append(cfg.Tickets.Archived, *ticket)
-			} else {
-				// Keep this ticket active
-				newActive = append(newActive, *ticket)
-			}
-		}
-		cfg.Tickets.Active = newActive
-
-		if err := cfgMgr.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
-	}
-
-	// Git commit removed (no longer tracking in git)
-
-	if !dryRun {
-		fmt.Println()
-		successMsg(fmt.Sprintf("Successfully archived %d ticket(s)", archivedCount))
-	}
-
-	return nil
+	target, err := os.Readlink(path)
+	return err == nil && strings.Contains(target, string(filepath.Separator)+filepath.Join("_tickets", ticketID)+string(filepath.Separator))
 }
 
 // workingTicketIsStale reports whether a working-list entry points at a ticket

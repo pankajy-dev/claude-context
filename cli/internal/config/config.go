@@ -15,6 +15,17 @@ type Config struct {
 	Tickets               TicketSection   `json:"tickets"`
 	Settings              Settings        `json:"settings"`
 	CurrentWorkingTickets []CurrentTicket `json:"current_working_tickets,omitempty"` // Support multiple concurrent tickets
+	Archives              []ArchiveRecord `json:"archives,omitempty"`
+}
+
+// ArchiveRecord describes one directory under contexts/_archived/
+type ArchiveRecord struct {
+	ArchiveDir string    `json:"archive_dir"` // relative to the data dir
+	SourcePath string    `json:"source_path"` // "" when unknown
+	TicketID   string    `json:"ticket_id,omitempty"`
+	ArchivedAt time.Time `json:"archived_at"`
+	FileCount  int       `json:"file_count"`
+	Kind       string    `json:"kind"` // ticket, path, glob or backfill
 }
 
 // Project represents a managed project
@@ -60,6 +71,7 @@ type Ticket struct {
 	ArchivedPath       string          `json:"archived_path,omitempty"`
 	DocGenerated       bool            `json:"doc_generated,omitempty"`
 	PrimaryContextName string          `json:"primary_context_name,omitempty"` // Which project has concrete files (v2 schema)
+	WorkspacePath      string          `json:"workspace_path,omitempty"`       // <project>/.cctx/<ID>; empty for legacy single-file tickets
 }
 
 // LinkedProject represents a project linked to a ticket
@@ -182,6 +194,18 @@ func (c *Config) GetTicket(ticketID string, includeArchived bool) *Ticket {
 	}
 
 	return nil
+}
+
+// AllTicketIDs returns the IDs of active and archived tickets
+func (c *Config) AllTicketIDs() []string {
+	ids := []string{}
+	for _, t := range c.Tickets.Active {
+		ids = append(ids, t.TicketID)
+	}
+	for _, t := range c.Tickets.Archived {
+		ids = append(ids, t.TicketID)
+	}
+	return ids
 }
 
 // GetGlobalContext finds a global context by name

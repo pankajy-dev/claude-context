@@ -242,6 +242,18 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
+	// Directory tickets have no symlinks; just check the workspace is still there
+	for _, ticket := range cfg.Tickets.Active {
+		if ticket.WorkspacePath != "" && !common.DirExists(ticket.WorkspacePath) {
+			issues = append(issues, verifyIssue{
+				project:     ticket.TicketID,
+				issueType:   "missing-workspace",
+				description: fmt.Sprintf("workspace %s is missing; drop the record with `cctx ticket delete %s`", ticket.WorkspacePath, ticket.TicketID),
+				fixable:     false,
+			})
+		}
+	}
+
 	// Check for orphaned context directories
 	contextsDir := cfgMgr.GetContextsPath()
 	entries, err := os.ReadDir(contextsDir)

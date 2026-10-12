@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,57 +94,4 @@ func ticketFileNames(dir, ticketID string) []string {
 		}
 	}
 	return names
-}
-
-// promptExtraFiles interactively asks the user which extra files to include in the archive.
-// Returns the selected file names.
-func promptExtraFiles(extras []string) []string {
-	if len(extras) == 0 {
-		return nil
-	}
-	fmt.Println()
-	infoMsg("Found additional files containing the ticket ID:")
-	fmt.Println()
-	for i, f := range extras {
-		fmt.Printf("  %d. %s\n", i+1, f)
-	}
-	fmt.Printf("  %d. All of the above\n", len(extras)+1)
-	fmt.Printf("  %d. None\n", len(extras)+2)
-	fmt.Printf("\nSelect files to include in archive (comma-separated, e.g. 1,3): ")
-
-	var input string
-	fmt.Scanln(&input)
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return nil
-	}
-
-	noneChoice := len(extras) + 2
-	allChoice := len(extras) + 1
-
-	// Parse selections
-	selected := map[int]bool{}
-	for _, part := range strings.Split(input, ",") {
-		var n int
-		if _, err := fmt.Sscanf(strings.TrimSpace(part), "%d", &n); err != nil {
-			continue
-		}
-		if n == noneChoice {
-			return nil
-		}
-		if n == allChoice {
-			return extras
-		}
-		if n >= 1 && n <= len(extras) {
-			selected[n-1] = true
-		}
-	}
-
-	var result []string
-	for i, f := range extras {
-		if selected[i] {
-			result = append(result, f)
-		}
-	}
-	return result
 }

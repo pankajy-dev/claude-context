@@ -281,6 +281,16 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// 3b. Staging dirs left behind by an interrupted archive
+	stagingDirs, _ := filepath.Glob(filepath.Join(contextsDir, "_archived", ".staging-*"))
+	for _, dir := range stagingDirs {
+		cleanupItems = append(cleanupItems, cleanupItem{
+			itemType:    "staging-dir",
+			path:        dir,
+			description: fmt.Sprintf("Leftover archive staging directory: %s", filepath.Base(dir)),
+		})
+	}
+
 	// 4. Scan _global directory for orphaned global context files
 	globalDir := filepath.Join(contextsDir, "_global")
 	if common.DirExists(globalDir) {
@@ -440,7 +450,7 @@ func deleteOrphanedItems(cleanupItems []cleanupItem) error {
 		switch item.itemType {
 		case "symlink":
 			err = os.Remove(item.path)
-		case "context-dir", "ticket-dir":
+		case "context-dir", "ticket-dir", "staging-dir":
 			err = os.RemoveAll(item.path)
 		case "global-file":
 			err = os.Remove(item.path)
@@ -596,6 +606,9 @@ func restoreOrphanedItems(cleanupItems []cleanupItem, cfg *config.Config, cfgMgr
 			successMsg(fmt.Sprintf("Restored global context: %s (disabled)", globalName))
 			restored++
 
+		case "staging-dir":
+			// Nothing to restore; only delete mode removes these
+			continue
 		case "symlink":
 			// For orphaned symlinks, we can't easily restore them
 			// because we don't know what they should link to

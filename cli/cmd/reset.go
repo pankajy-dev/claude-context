@@ -249,6 +249,12 @@ func runResetAll(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  • Remove %d files from %d project directories\n", projectFilesCount, len(projectPaths))
 		fmt.Printf("  • Remove entire data directory: %s\n", dataDir)
 	}
+	// Project workspaces are never deleted by reset
+	for _, ticket := range allTickets {
+		if ticket.WorkspacePath != "" && common.DirExists(ticket.WorkspacePath) {
+			fmt.Printf("  • Left on disk: %s\n", ticket.WorkspacePath)
+		}
+	}
 
 	fmt.Println()
 
@@ -337,6 +343,13 @@ func runResetAll(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	if resetKeepConfig {
+		// _archived/ is gone, so its records are too
+		if cfg, err := cfgMgr.Load(); err == nil && len(cfg.Archives) > 0 {
+			cfg.Archives = nil
+			if err := cfgMgr.Save(cfg); err != nil {
+				warningMsg(fmt.Sprintf("Failed to clear archive records: %v", err))
+			}
+		}
 		infoMsg("Config.json and templates preserved")
 		infoMsg("Run 'cctx admin init' to recreate context directories")
 	} else {
