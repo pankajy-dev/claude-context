@@ -77,57 +77,61 @@ make check
 **Data Directory Structure**:
 ```
 ~/.cctx/
-├── config.json              # Single source of truth for all configuration
+├── config.json              # Single source of truth, including archive records
 ├── contexts/
 │   ├── project-name/        # Per-project contexts
 │   │   └── claude.md
 │   ├── _global/            # Shared global contexts
 │   │   ├── script.md
 │   │   └── python.md
-│   ├── _tickets/           # Ticket workspaces
-│   │   └── TICKET-123/
-│   │       ├── TICKET-123.md -> /path/to/project/TICKET-123.md
-│   │       └── SESSIONS.md  -> /path/to/project/SESSIONS.md
-│   └── _archived/          # Archived tickets, one dir per ticket
+│   ├── _tickets/           # Symlinks for legacy single-file tickets only
+│   └── _archived/          # One new dir per archive run, never reused
 │       └── 2026-08-12_TICKET-123/
-│           ├── TICKET-123.md
-│           └── PLAN-TICKET-123.md   # companions archived alongside
 └── templates/              # User template overrides
+
+<project>/.cctx/             # Project workspace (git-ignored, never committed)
+├── mission.md               # cctx init-specs
+├── tech-stack.md
+├── roadmap.md
+└── TICKET-123/              # cctx ticket create
+    ├── requirements.md
+    ├── plan.md
+    ├── validation.md
+    └── changelog.md
 ```
 
-### V2 Architecture (Ticket System)
+### Ticket System
 
-**Key principle**: Concrete files live in the project directory, data directory contains symlinks pointing to them.
+**Directory tickets** (created by `cctx ticket create`): the ticket is exactly its
+workspace, `./.cctx/<ID>/` in the directory where it was created. Config records
+the canonical path as `workspace_path`; `linked_projects` and
+`primary_context_name` stay empty and no symlinks are created. Files outside the
+workspace are never part of the ticket.
 
-When creating a ticket:
-1. **Concrete file** created in project directory: `TICKET-123.md` (includes session tracking)
-2. **Symlink created in data directory**: `~/.cctx/contexts/_tickets/TICKET-123/TICKET-123.md` → project concrete file
-3. **Primary context** tracked in config: First linked project owns the concrete file
-4. **Other projects** get symlinks pointing to primary project's concrete file
+**Legacy tickets** (empty `workspace_path`): the older single `<ID>.md` in the
+project plus symlinks under `_tickets/`. They can still be listed, shown,
+linked, restored and deleted, but `cctx archive <ID>` and `ticket complete`
+refuse them and print the command to archive their files by name.
 
-Files inside `_tickets/<ID>/` are named after the ticket (`TICKET-123.md`), not
-`ticket.md` — every code path builds the name as `ticketID + ".md"`.
+### Archive Engine
 
-This design ensures:
-- Files are version-controlled with the project
-- Easy discovery (concrete files in project, not hidden in ~/.cctx)
-- Multiple projects can reference same ticket via symlinks
-- Deleting from primary project removes concrete files; deleting from secondary only removes symlinks
+Everything that moves files into `_archived/` goes through `archiveItems` in
+`cli/cmd/archiveengine.go`: pre-flight refusals (git-tracked files, the data
+dir, anything containing cwd, nested `.git`/`.cctx`, an active ticket's
+workspace), copy to a `.staging-*` dir, SHA-256 verify, reserve a new
+`<date>_<name>[-n]` dir, save config (record + caller's mutation), then delete
+sources. A failed save removes the new archive, so sources are only deleted once
+config says they're archived. Each run appends one `ArchiveRecord` (`kind`:
+`ticket`, `path`, `glob`, `backfill`); only `ticket` records are owned by their
+ticket and removed by `ticket delete`.
 
 ### Ticket File Recognition
 
-A ticket owns more than one file: `TICKET-123.md` plus companions named after it
-(`PLAN-TICKET-123.md`, `TICKET-123-notes.txt`). Recognition lives in exactly one
-place, `cli/cmd/ticketfiles.go`:
-
-- `IsTicketFileName(filename, ticketID)` — whole-word, case-insensitive,
-  extension-agnostic match, so `TICKET-1230.md` does not match `TICKET-123`
-- `FindTicketFiles(dir, ticketID)` — the full working set, ticket file first
-- `FindExtraTicketFiles(dir, ticketID)` — companions only
-
-Archive, complete and delete all route through these. Never re-derive a ticket's
-filenames inline; that drift is what previously made `ticket archive` miss
-`PLAN-*.md` files.
+`cli/cmd/ticketfiles.go` (`IsTicketFileName`, `FindTicketFiles`,
+`FindExtraTicketFiles`) still decides which loose files belong to an ID — used by
+glob archiving and the legacy how-to. `filterIDCollisions` in
+`cli/cmd/archiveticket.go` drops files that belong to a longer ticket ID
+(`CBP-7-x.md` is not `CBP-7`'s).
 
 ### Configuration System
 
@@ -174,16 +178,17 @@ The visible surface is deliberately small — ticket work is what this tool is
 actually used for:
 
 ```
-cctx ticket <verb>    Day-to-day work (create, complete, abandon, archive, list, show, ...)
-cctx archive <glob>   Archive loose files from the current directory
+cctx ticket <verb>    Day-to-day work (create, complete, abandon, restore, list, show, ...)
+cctx archive [...]    The only archive verb: ticket ID, path or glob; --all-active; --list
+cctx init-specs       Scaffold mission/tech-stack/roadmap in ./.cctx/
 cctx admin <verb>     Setup and maintenance: init, home, verify, cleanup, reset
                       Project contexts (legacy claude.md symlinks): sync, link, unlink, list, global
 ```
 
 `admin` (`cli/cmd/admin.go`) exists to keep setup and the rarely-used
 project-context feature out of the top-level listing. There are no
-backwards-compatible aliases: `cctx verify` is an unknown command, the
-spelling is `cctx admin verify`.
+backwards-compatible aliases: `cctx verify` and `cctx ticket archive` are
+unknown commands; the spellings are `cctx admin verify` and `cctx archive`.
 
 ### Command Implementation Pattern
 

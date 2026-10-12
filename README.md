@@ -1,31 +1,23 @@
 # Claude Context Manager
 
-**A per-ticket context file for Claude Code, created on the branch you're working on and archived when you're done.**
+**A spec-driven workspace per ticket for Claude Code, kept out of git and archived safely when you're done.**
 
 ## The Problem
 
-You work a ticket in Claude Code. The requirements, the plan, the decisions you
-made three sessions ago — all of it lives in the chat, and the chat is gone
-tomorrow. So you end up:
-
-- Re-explaining the ticket to Claude every session
-- Keeping notes in scratch files that pile up in the repo root
-- Losing the reasoning behind a decision by the time review comes around
+You work a ticket in Claude Code with a spec-driven workflow: requirements, a plan,
+validation criteria, a changelog — and often a skill that writes its own set of
+files. None of it belongs in the org repo, and when the work is done it all needs
+to go somewhere safe without anyone hand-picking files to delete.
 
 ## The Solution
 
-`cctx` gives every ticket a file, and gets it in front of Claude automatically:
-
-- **One file per ticket**: `CBP-123.md` in the project, version-controlled with your code
-- **Auto-detected from your branch**: `cctx ticket create` on branch `CBP-123` needs no arguments
-- **Companion docs travel with it**: `PLAN-CBP-123.md`, notes, scratch API docs — archived together
-- **Archived, not deleted**: finished tickets move to `~/.cctx/contexts/_archived/`
-
-## Who Should Use This
-
-- **Developers using Claude Code on ticket-driven work** (Jira, Linear, GitHub issues)
-- **Anyone** whose repo root collects `PLAN-*.md` and scratch notes they later have to clean up
-- **Teams** who also want shared `claude.md` guidelines across projects (see [`cctx admin`](#project-contexts-legacy))
+- **One directory per ticket**: `.cctx/CBP-123/` in the project, with
+  `requirements.md`, `plan.md`, `validation.md` and `changelog.md` to start from
+- **Bring your own skill**: skip the templates and let your SDD skill write
+  wherever it likes; `cctx` archives any directory
+- **Never committed**: everything lives under `.cctx/`, one global gitignore line
+- **Archived, not deleted**: one `cctx archive` verb copies, verifies, records and
+  only then removes — and refuses anything git-tracked
 
 ## Quick Example
 
@@ -33,94 +25,67 @@ tomorrow. So you end up:
 # Install and initialize
 git clone https://github.com/yourusername/claude-context.git
 cd claude-context && make install && cctx admin init
+echo '.cctx/' >> ~/.gitignore_global
 
-# Start work — ticket ID comes from the branch
+# Start work — ticket ID comes from the branch (feature/CBP-123 works too)
 cd ~/my-service && git checkout -b CBP-123
 cctx ticket create
 
-# Creates CBP-123.md + SESSIONS.md in the project directory.
-# Now just tell Claude: "Let's work on the ticket"
+# Creates .cctx/CBP-123/{requirements,plan,validation,changelog}.md
+# Now tell Claude: "Let's work on the ticket"
 
-# When you're done — takes PLAN-CBP-123.md and friends with it
+# When you're done — marks it completed and archives the workspace
 cctx ticket complete
-cctx ticket archive
 ```
-
-**That's it.** The context lives with the code, and the repo root stays clean.
 
 ## Common Workflows
 
-### Ticket Workflows (Jira Integration)
+### Tickets
 
 ```bash
-# Create a ticket workspace
-cd my-project && cctx ticket create PROJ-123
-
-# Creates:
-# - PROJ-123.md (ticket context)
-# - SESSIONS.md (session log)
-# - Both auto-linked to project
-
-# Link same ticket to another project
-cd related-service && cctx ticket link PROJ-123
-
-# See what you're working on
-cctx ticket list
-cctx ticket show PROJ-123
-
-# Wrap up — ticket ID auto-detected from the branch
-cctx ticket complete
-cctx ticket archive
+cctx ticket create PROJ-123     # scaffold .cctx/PROJ-123/
+cctx ticket list                # what's active
+cctx ticket show PROJ-123       # details, including the workspace path
+cctx ticket complete            # complete + archive (ID from the branch)
+cctx ticket restore PROJ-123    # bring an archived workspace back into ./.cctx/
 ```
 
 Ticket ID resolution is the same everywhere: an explicit argument wins, then
 `--ticket/-t`, then `CCTX_TICKET`, then the current git branch (unless it's
-`main`/`master`). So on branch `PROJ-123` every command above works bare.
+`main`/`master`; for `feature/PROJ-123` the last segment is used).
 
-**After setup (see [Integrating with Claude Code](#integrating-with-claude-code))**, working on tickets becomes incredibly simple:
-
-```bash
-cd my-project
-git checkout -b BEE-1234
-cctx ticket create
-# Just tell Claude:
-"Let's work on the ticket"
-```
-
-That's it. Claude will:
-1. Auto-detect the ticket ID (from branch name, files, or context)
-2. Fetch full Jira details via MCP
-3. Update BEE-1234.md with requirements
-4. Start working on the ticket
-5. Log the session to SESSIONS.md automatically
-
-**No manual copy-pasting. No context switching. Just work.**
-
-### Archiving Files
-
-`cctx ticket archive` takes the ticket file **and every companion named after
-it** — `PLAN-PROJ-123.md`, `PROJ-123-notes.txt`, any extension — into a single
-archive directory. Unrelated files are left alone:
+### Project specs
 
 ```bash
-# Archives PROJ-123.md + PLAN-PROJ-123.md + PROJ-123-notes.txt together
-cctx ticket archive PROJ-123
-
-# Lists what matched and lets you pick: [Y/n/select], e.g. "1,3-4"
-# Preview first without moving anything
-cctx ticket archive PROJ-123 --dry-run
+cctx init-specs   # .cctx/mission.md, tech-stack.md, roadmap.md (never overwrites)
 ```
 
-For loose files that aren't tied to a ticket, archive by name or glob:
+Each template opens with instructions for Claude to interview you (using the
+AskUserQuestion tool) before writing anything.
+
+### Archiving
+
+`cctx archive` is the only archive command. Every run creates a new directory
+under `~/.cctx/contexts/_archived/` and records it in `config.json`.
 
 ```bash
-cctx archive "v4-*.md"              # by pattern
-cctx archive old-design.md notes.md # by name
-cctx archive "*.md" --dry-run       # preview
+cctx archive PROJ-123                # a ticket's workspace (active → completed first)
+cctx archive specs/2026-10-12-login  # any directory, e.g. one your skill created
+cctx archive "v4-*.md" notes.md      # files by glob or name
+cctx archive --all-active            # every active ticket (-p <project> to limit)
+cctx archive --list                  # what was archived from this repo
+cctx archive --list --all            # ... from everywhere
+cctx archive specs/old --dry-run     # preview
 ```
 
-Everything lands in `~/.cctx/contexts/_archived/` — moved out of your repo, not
-deleted.
+Files are copied to a staging directory, verified (SHA-256), recorded in config,
+and only then deleted. `cctx` refuses to archive anything git-tracked, anything
+containing the current directory or a nested git repo, and anything inside the
+cctx data directory. It works the same in directories that aren't git repos.
+
+Tickets created before directory workspaces (a single `CBP-123.md` file) are not
+archived by ticket ID; `cctx archive CBP-123` prints the exact command to archive
+their files by name instead.
 
 ### Project Contexts (Legacy)
 
@@ -275,31 +240,30 @@ All data is stored in `~/.cctx/` (or custom location via `CCTX_DATA_DIR`):
 
 ```
 ~/.cctx/
-├── config.json              # All configuration
-├── contexts/                # All context files
+├── config.json              # All configuration, including archive records
+├── contexts/
 │   ├── project-name/
-│   │   └── claude.md       # Project-specific context
+│   │   └── claude.md       # Project-specific context (legacy feature)
 │   ├── _global/            # Global contexts (shared)
-│   │   ├── script.md
-│   │   └── python.md
-│   ├── _tickets/           # Ticket workspaces
-│   │   └── TICKET-123/
-│   │       ├── ticket.md
-│   │       ├── SESSIONS.md
-│   │       └── metadata.json
-│   └── _archived/          # Archived tickets
+│   ├── _tickets/           # Symlinks for legacy single-file tickets
+│   └── _archived/          # One directory per archive run
+│       └── 2026-10-12_CBP-123/
 └── templates/              # User template overrides (optional)
-    └── (custom templates)  # Override embedded templates
 ```
 
-Projects get symlinks pointing to centralized files:
+Ticket workspaces live in the project, next to your code but git-ignored:
 
 ```
 my-project/
-├── claude.md -> ~/.cctx/contexts/my-project/claude.md
-├── python.md -> ~/.cctx/contexts/_global/python.md
-├── TICKET-123.md -> ~/.cctx/contexts/_tickets/TICKET-123/ticket.md
-├── SESSIONS.md -> ~/.cctx/contexts/_tickets/TICKET-123/SESSIONS.md
+├── .cctx/
+│   ├── mission.md          # from cctx init-specs
+│   ├── tech-stack.md
+│   ├── roadmap.md
+│   └── CBP-123/            # from cctx ticket create
+│       ├── requirements.md
+│       ├── plan.md
+│       ├── validation.md
+│       └── changelog.md
 └── ... (your code)
 ```
 
@@ -331,8 +295,8 @@ cctx admin global templates list
 
 # View template content
 cctx admin global templates show default
-cctx admin global templates show ticket
-cctx admin global templates show sessions
+cctx admin global templates show ticket-requirements
+cctx admin global templates show specs-roadmap
 
 # Create custom override
 vim ~/.cctx/templates/default.md
@@ -356,77 +320,38 @@ cctx --data-dir /path/to/data init
 ## Integrating with Claude Code
 To get full value from cctx, configure Claude Code to automatically work with ticket files and session logs.
 
-### 1. Auto-permissions for Ticket Files
+### 1. Auto-permissions for Workspace Files
 
 Add to `~/.claude/settings.json`:
 
 ```json
 {
   "alwaysAllow": {
-    "Read": ["**/CBP-*.md", "**/BEE-*.md", "**/SESSIONS*.md"],
-    "Edit": ["**/CBP-*.md", "**/BEE-*.md", "**/SESSIONS*.md"]
+    "Read": ["**/.cctx/**"],
+    "Edit": ["**/.cctx/**"]
   }
 }
 ```
 
-**Why**: Eliminates permission prompts when Claude reads/updates ticket files.
+**Why**: Eliminates permission prompts when Claude reads/updates the spec files.
 
 ### 2. Context Policies
 
 Add to `~/.claude/CLAUDE.md`:
 
 ```markdown
-## Jira MCP Policy
+## Ticket Workspace Policy
 
-Regex pattern: (CBP|BEE)-\d+
-
-If input contains a match:
-1. Treat it as a Jira issue key.
-2. Ask for confirmation before fetching the Jira ticket details.
-3. Check if Atlassian MCP server is available:
-   - Search for mcp__atlassian tools using ToolSearch
-   - If NOT available, ask user to authenticate
-4. Invoke Atlassian MCP.
-5. Retrieve: summary, description, status, acceptance criteria.
-6. Use retrieved data as authoritative context.
-
-## Session Logging Policy (Conditional)
-
-If the current project contains a file named `SESSIONS*.md` in the repository root:
-
-1. Append after completing each distinct task or ticket work.
-2. Keep entry <= 30 lines.
-3. Include:
-   - Date (ISO)
-   - Git branch
-   - Jira ticket if present (CBP|BEE)-\d+
-   - Decisions made
-   - Research findings
-   - Trade-offs
-   - Session cost (USD)
-4. Append-only. Never modify previous entries.
-
-If `SESSIONS*.md` does not exist:
-- Do nothing.
-- Do not create it automatically.
-
-## Ticket Context Policy
-
-Always auto-approve:
-- Read/Edit any file matching `(CBP|BEE)-\d+\.md`
-
-For any ticket matching pattern `(CBP|BEE)-\d+`:
-1. Always READ and UPDATE it with Jira details before starting work
-2. This file is the source of truth for the ticket's requirements and state
-3. Always confirm to checkout a new branch before making change on any repository, mostly in the format of `CBP-1234` or `BEE-1234`
+On a branch whose last path segment is a ticket ID (e.g. `feature/CBP-1234`):
+1. Run `cctx ticket show <ID>`; use the directory on its `Workspace:` line.
+2. Treat `requirements.md` there as the source of truth; fill it from Jira via the
+   Atlassian MCP server if it is still empty.
+3. After each distinct piece of work, append an entry (≤30 lines) to `changelog.md`.
+   Append-only — never modify previous entries.
 ```
 
-**Why**:
-- **Jira MCP Policy**: Auto-fetches ticket details from Jira (requires MCP server setup)
-- **Session Logging**: Tracks work automatically in SESSIONS.md
-- **Ticket Context Policy**: Ensures Claude reads ticket context before starting
-
-**Note**: The Jira MCP Policy requires the Atlassian MCP server. See [atlassian_mcp_integration.md](./atlassian_mcp_integration.md) for MCP server setup instructions.
+**Note**: Fetching Jira details requires the Atlassian MCP server. See
+[atlassian_mcp_integration.md](./atlassian_mcp_integration.md) for setup.
 
 ## Troubleshooting
 
