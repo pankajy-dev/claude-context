@@ -283,6 +283,8 @@ Edit `~/.cctx/config.json`:
 
 Templates are embedded in the binary and update when you update the tool.
 
+**Source in repo:** `cli/internal/templates/*.md`, embedded via `//go:embed` in `cli/internal/templates/embed.go`.
+
 **Template Priority:**
 1. User overrides: `~/.cctx/templates/` (if file exists)
 2. Embedded defaults: Built into binary (repository source of truth)
