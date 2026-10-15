@@ -60,4 +60,4 @@ For any ticket matching pattern `(CBP|BEE|SECO)-\d+`:
 1. Always READ and UPDATE it with Jira details before starting work
 2. This file is the source of truth for the ticket's requirements and state
 3. Follow the ticket file's `## Todo for the ticket` checklist as the spec: discuss the plan and confirm the issue/scope, write a test, commit the test, implement and verify, commit the implementation, then commit any test updates — check off each item as it's completed
-4. Always confirm to checkout a new branch before making a change on any repository, mostly in the format of `CBP-1234` or `BEE-1234`
+4. Always confirm to checkout a new branch before making a change on any repository, mostly in the format of `CBP-1234` or `BEE-1234`/. Before checkout get latest code changes on the main.
