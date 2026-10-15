@@ -1,6 +1,6 @@
 # Binary
-cctx
-cctx-*
+/cctx
+/cctx-*
 
 # Build artifacts
 *.bak
