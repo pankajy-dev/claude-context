@@ -9,6 +9,19 @@ validation criteria, a changelog — and often a skill that writes its own set o
 files. None of it belongs in the org repo, and when the work is done it all needs
 to go somewhere safe without anyone hand-picking files to delete.
 
+## Best Used With the `cctx` Skill
+
+This CLI works best paired with the `cctx` Claude Code skill, which teaches Claude
+how to find a ticket's `.cctx/<ID>/` workspace, treat `requirements.md` as source of
+truth, and log sessions to `changelog.md`. It ships in this repo at
+`.claude/skills/cctx/skill.md` — a project-scoped skill, so it's available whenever
+you work in this repo. Install it globally for use in other projects:
+
+```bash
+mkdir -p ~/.claude/skills/cctx
+cp .claude/skills/cctx/skill.md ~/.claude/skills/cctx/skill.md
+```
+
 ## The Solution
 
 - **One directory per ticket**: `.cctx/CBP-123/` in the project, with
